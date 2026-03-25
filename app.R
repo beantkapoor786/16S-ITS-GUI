@@ -869,7 +869,9 @@ ui <- fluidPage(
     div(id = "step_nav_6", class = "step-pill", onclick = "Shiny.setInputValue('nav_step', 6, {priority: 'event'})",
       span(class = "step-number", "6"), "Taxonomy"),
     div(id = "step_nav_7", class = "step-pill", onclick = "Shiny.setInputValue('nav_step', 7, {priority: 'event'})",
-      span(class = "step-number", "7"), "Phyloseq & Export")
+      span(class = "step-number", "7"), "Phyloseq"),
+    div(id = "step_nav_8", class = "step-pill", onclick = "Shiny.setInputValue('nav_step', 8, {priority: 'event'})",
+      span(class = "step-number", "8"), "Figures")
   ),
 
   # ── Main content ──
@@ -1181,7 +1183,7 @@ ui <- fluidPage(
       ),
 
       div(class = "proceed-bar",
-        actionButton("proceed_6", "Proceed to Phyloseq & Export →", class = "btn-proceed",
+        actionButton("proceed_6", "Proceed to Phyloseq \u2192", class = "btn-proceed",
                      icon = icon("arrow-right"))
       ),
 
@@ -1189,7 +1191,7 @@ ui <- fluidPage(
     )),
 
     # ═══════════════════════════════════════════════════════════════════════
-    # STEP 7: Phyloseq & Export
+    # STEP 7: Phyloseq
     # ═══════════════════════════════════════════════════════════════════════
     hidden(div(id = "panel_step7", class = "step-panel",
 
@@ -1230,10 +1232,53 @@ ui <- fluidPage(
 
       div(class = "card",
         div(class = "card-header",
+          div(class = "icon amber", icon("download")),
+          "Export Results"
+        ),
+        div(class = "card-description",
+          "Download all pipeline outputs."
+        ),
+        div(class = "grid-4",
+          downloadButton("dl_asv", "ASV Table (CSV)", class = "btn-download"),
+          downloadButton("dl_taxa", "Taxonomy (CSV)", class = "btn-download"),
+          downloadButton("dl_track", "Tracking Table (CSV)", class = "btn-download"),
+          downloadButton("dl_rdata", "Full Workspace (.RData)", class = "btn-download")
+        ),
+        div(class = "grid-2", style = "margin-top: 12px;",
+          downloadButton("dl_phyloseq_rds", "Phyloseq Object (.rds)", class = "btn-download"),
+          div()
+        )
+      ),
+
+      div(class = "proceed-bar",
+        actionButton("proceed_7", "Proceed to Figures \u2192", class = "btn-proceed",
+                     icon = icon("arrow-right"))
+      ),
+
+      div(class = "log-panel", id = "log_step7", htmlOutput("log7"))
+    )),
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # STEP 8: Figures
+    # ═══════════════════════════════════════════════════════════════════════
+    hidden(div(id = "panel_step8", class = "step-panel",
+
+      div(class = "card",
+        div(class = "card-header",
           div(class = "icon blue", icon("chart-bar")),
           "Visualizations"
         ),
         tabsetPanel(
+          tabPanel("Rarefaction Curves",
+            div(class = "grid-2", style = "margin-top:12px; margin-bottom:12px;",
+              selectInput("rare_color", "Color by", choices = NULL),
+              numericInput("rare_step", "Step Size", value = 100, min = 10, max = 1000)
+            ),
+            plotOutput("rarefaction_plot", height = "500px") %>% withSpinner(type = 6, color = "#3b82f6"),
+            div(style = "margin-top: 12px;",
+              downloadButton("dl_rarefaction_png", "Download Rarefaction Curves (PNG)", class = "btn-download")
+            )
+          ),
           tabPanel("Alpha Diversity",
             div(style = "margin-top:12px; margin-bottom:12px; max-width: 300px;",
               selectInput("alpha_x", "Group by", choices = NULL)
@@ -1281,27 +1326,7 @@ ui <- fluidPage(
         )
       ),
 
-      div(class = "card",
-        div(class = "card-header",
-          div(class = "icon amber", icon("download")),
-          "Export Results"
-        ),
-        div(class = "card-description",
-          "Download all pipeline outputs."
-        ),
-        div(class = "grid-4",
-          downloadButton("dl_asv", "ASV Table (CSV)", class = "btn-download"),
-          downloadButton("dl_taxa", "Taxonomy (CSV)", class = "btn-download"),
-          downloadButton("dl_track", "Tracking Table (CSV)", class = "btn-download"),
-          downloadButton("dl_rdata", "Full Workspace (.RData)", class = "btn-download")
-        ),
-        div(class = "grid-2", style = "margin-top: 12px;",
-          downloadButton("dl_phyloseq_rds", "Phyloseq Object (.rds)", class = "btn-download"),
-          div()
-        )
-      ),
-
-      div(class = "log-panel", id = "log_step7", htmlOutput("log7"))
+      div(class = "log-panel", id = "log_step8", htmlOutput("log8"))
     ))
 
   ) # end main-container
@@ -1345,7 +1370,7 @@ server <- function(input, output, session) {
     # Tracking
     track = NULL,
     # Logs
-    log1 = "", log2 = "", log3 = "", log4 = "", log5 = "", log6 = "", log7 = "",
+    log1 = "", log2 = "", log3 = "", log4 = "", log5 = "", log6 = "", log7 = "", log8 = "",
     # Step progress: list(pct, label, status)
     prog3 = list(pct = 0, label = "", status = "idle"),
     prog4 = list(pct = 0, label = "", status = "idle"),
@@ -1428,7 +1453,7 @@ server <- function(input, output, session) {
         transform_method = rv$transform_method, samdf = rv$samdf,
         track = rv$track,
         log1 = rv$log1, log2 = rv$log2, log3 = rv$log3,
-        log4 = rv$log4, log5 = rv$log5, log6 = rv$log6, log7 = rv$log7,
+        log4 = rv$log4, log5 = rv$log5, log6 = rv$log6, log7 = rv$log7, log8 = rv$log8,
         # Save input parameters for reproducibility
         fwd_pattern = isolate(input$fwd_pattern),
         rev_pattern = isolate(input$rev_pattern),
@@ -1477,6 +1502,7 @@ server <- function(input, output, session) {
       rv$log5 <- session_data$log5
       rv$log6 <- session_data$log6
       rv$log7 <- session_data$log7
+      rv$log8 <- if (!is.null(session_data$log8)) session_data$log8 else ""
 
       # Restore UI inputs
       updateTextInput(session, "data_path", value = session_data$data_path)
@@ -1496,8 +1522,8 @@ server <- function(input, output, session) {
       if (3 %in% rv$completed_steps) rv$filt_qplots_ready <- TRUE
 
       # Navigate to first incomplete step
-      all_steps <- 1:7
-      next_step <- min(setdiff(all_steps, rv$completed_steps), 7)
+      all_steps <- 1:8
+      next_step <- min(setdiff(all_steps, rv$completed_steps), 8)
       rv$current_step <- next_step
 
       # Validate file paths
@@ -1582,7 +1608,7 @@ server <- function(input, output, session) {
       tryCatch({
         load(session_file)
         step_names <- c("Setup & Files", "Quality Profiles", "Filter & Trim",
-                        "Dereplication", "Merge & Chimeras", "Taxonomy", "Phyloseq & Export")
+                        "Dereplication", "Merge & Chimeras", "Taxonomy", "Phyloseq", "Figures")
         completed <- session_data$completed_steps
         last_step <- if (length(completed) > 0) max(completed) else 0
         last_step_name <- if (last_step > 0) step_names[last_step] else "None"
@@ -1638,7 +1664,7 @@ server <- function(input, output, session) {
       later_steps <- rv$completed_steps[rv$completed_steps > step]
       if (length(later_steps) > 0) {
         step_names <- c("Setup & Files", "Quality Profiles", "Filter & Trim",
-                        "Dereplication", "Merge & Chimeras", "Taxonomy", "Phyloseq & Export")
+                        "Dereplication", "Merge & Chimeras", "Taxonomy", "Phyloseq", "Figures")
         invalidated <- paste(step_names[later_steps], collapse = ", ")
         showNotification(
           paste0("Re-running this step will invalidate subsequent completed steps: ", invalidated, "."),
@@ -1668,18 +1694,19 @@ server <- function(input, output, session) {
   output$log5 <- renderUI(HTML(rv$log5))
   output$log6 <- renderUI(HTML(rv$log6))
   output$log7 <- renderUI(HTML(rv$log7))
+  output$log8 <- renderUI(HTML(rv$log8))
 
   # ── Navigation ──────────────────────────────────────────────────────────
   observe({
     step <- rv$current_step
     completed <- rv$completed_steps
-    for (i in 1:7) {
+    for (i in 1:8) {
       toggleClass(id = paste0("step_nav_", i), class = "active", condition = (i == step))
       toggleClass(id = paste0("step_nav_", i), class = "completed", condition = (i %in% completed & i != step))
       toggle(id = paste0("panel_step", i), condition = (i == step))
     }
     # Enable/disable proceed buttons based on step completion
-    for (i in 1:6) {
+    for (i in 1:7) {
       toggleState(id = paste0("proceed_", i), condition = (i %in% completed))
     }
   })
@@ -1691,6 +1718,7 @@ server <- function(input, output, session) {
   observeEvent(input$proceed_4, { rv$current_step <- 5 })
   observeEvent(input$proceed_5, { rv$current_step <- 6 })
   observeEvent(input$proceed_6, { rv$current_step <- 7 })
+  observeEvent(input$proceed_7, { rv$current_step <- 8 })
 
   # ═══════════════════════════════════════════════════════════════════════
   # STEP 1: Scan files & extract samples
@@ -2588,6 +2616,7 @@ server <- function(input, output, session) {
       updateSelectInput(session, "alpha_x", choices = factor_vars, selected = factor_vars[1])
       updateSelectInput(session, "ord_color", choices = c("None", meta_vars), selected = ifelse(length(meta_vars) > 1, meta_vars[1], "None"))
       updateSelectInput(session, "pcoa_color", choices = c("None", meta_vars), selected = ifelse(length(meta_vars) > 1, meta_vars[1], "None"))
+      updateSelectInput(session, "rare_color", choices = c("None", meta_vars), selected = ifelse(length(meta_vars) > 1, meta_vars[1], "None"))
       updateSelectInput(session, "bar_x", choices = factor_vars, selected = factor_vars[1])
 
       rv$completed_steps <- union(rv$completed_steps, 7)
@@ -2677,6 +2706,67 @@ server <- function(input, output, session) {
     if (!is.null(rv$ps_transformed)) rv$ps_transformed else rv$ps
   }
 
+  # ── Rarefaction Curves ──
+  make_rarefaction_plot <- function(ps, color_var, step_size) {
+    # Use raw (untransformed) phyloseq for rarefaction curves
+    ps_raw <- rv$ps
+    otu <- as(otu_table(ps_raw), "matrix")
+    if (taxa_are_rows(ps_raw)) otu <- t(otu)
+
+    sdata <- as(sample_data(ps_raw), "data.frame")
+    max_depth <- max(rowSums(otu))
+    steps <- seq(1, max_depth, by = step_size)
+
+    # Calculate rarefied richness at each depth for each sample
+    rare_list <- lapply(seq_len(nrow(otu)), function(i) {
+      sample_counts <- otu[i, ]
+      total <- sum(sample_counts)
+      richness <- sapply(steps[steps <= total], function(d) {
+        # Use rarefaction formula: S_rare = S - sum(choose(N-Ni, d) / choose(N, d))
+        # Approximate with vegan::rarefy if available, else simple subsampling estimate
+        sum(1 - exp(lchoose(total - sample_counts[sample_counts > 0], d) -
+                    lchoose(total, d)))
+      })
+      data.frame(
+        Sample = rownames(otu)[i],
+        Depth = steps[steps <= total],
+        Richness = richness,
+        stringsAsFactors = FALSE
+      )
+    })
+    rare_df <- do.call(rbind, rare_list)
+
+    # Add metadata
+    rare_df <- merge(rare_df, cbind(Sample = rownames(sdata), sdata), by = "Sample")
+
+    cv <- if (color_var == "None") NULL else color_var
+
+    p <- ggplot(rare_df, aes(x = Depth, y = Richness, group = Sample))
+    if (!is.null(cv)) {
+      p <- p + geom_line(aes_string(color = cv), alpha = 0.8, linewidth = 0.7)
+    } else {
+      p <- p + geom_line(alpha = 0.8, linewidth = 0.7, color = "#3b82f6")
+    }
+    p + labs(title = "Rarefaction Curves", x = "Sequencing Depth", y = "Observed ASVs") +
+      theme_minimal(base_size = 14) +
+      theme(
+        plot.background = element_rect(fill = "#1a2332", color = NA),
+        panel.background = element_rect(fill = "#1a2332", color = NA),
+        legend.background = element_rect(fill = "#1a2332", color = NA),
+        legend.key = element_rect(fill = "#1a2332", color = NA),
+        text = element_text(color = "#e8ecf4"),
+        axis.text = element_text(color = "#8899b0"),
+        panel.grid.major = element_line(color = "#2a3a52"),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 14, face = "bold")
+      )
+  }
+
+  output$rarefaction_plot <- renderPlot({
+    req(rv$ps, input$rare_color)
+    make_rarefaction_plot(get_active_ps(), input$rare_color, input$rare_step)
+  })
+
   # ── Alpha Diversity Plot (manual calculation, one point per sample) ──
   make_alpha_plot <- function(ps, x_var) {
     # Calculate diversity metrics manually — one value per sample
@@ -2746,8 +2836,13 @@ server <- function(input, output, session) {
     ord <- ordinate(ps_prop, method = "NMDS", distance = distance)
     cv <- if (color_var == "None") NULL else color_var
     p <- plot_ordination(ps_prop, ord, color = cv, title = paste("NMDS —", distance))
-    p + geom_point(size = 4, alpha = 0.8) +
-      theme_minimal(base_size = 14) +
+    p <- p + geom_point(size = 4, alpha = 0.8)
+    # Add dashed ellipses if color variable is set
+    if (!is.null(cv)) {
+      p <- p + stat_ellipse(aes_string(group = cv), type = "norm",
+                            linetype = "dashed", linewidth = 0.7, level = 0.95)
+    }
+    p + theme_minimal(base_size = 14) +
       theme(
         plot.background = element_rect(fill = "#1a2332", color = NA),
         panel.background = element_rect(fill = "#1a2332", color = NA),
@@ -2777,6 +2872,8 @@ server <- function(input, output, session) {
     ps_top <- transform_sample_counts(ps, function(OTU) OTU / sum(OTU))
     ps_top <- prune_taxa(top_taxa, ps_top)
     p <- plot_bar(ps_top, x = x_var, fill = fill_var)
+    # Remove black bar outlines by overriding geom_bar color
+    p$layers[[1]]$aes_params$colour <- NA
     p + theme_minimal(base_size = 14) +
       theme(
         plot.background = element_rect(fill = "#1a2332", color = NA),
@@ -2808,8 +2905,13 @@ server <- function(input, output, session) {
     ax2_lab <- paste0("PCoA2 [", var_explained[2], "%]")
 
     p <- plot_ordination(ps_prop, ord, color = cv, title = paste("PCoA —", distance))
-    p + geom_point(size = 4, alpha = 0.8) +
-      labs(x = ax1_lab, y = ax2_lab) +
+    p <- p + geom_point(size = 4, alpha = 0.8)
+    # Add dashed ellipses if color variable is set
+    if (!is.null(cv)) {
+      p <- p + stat_ellipse(aes_string(group = cv), type = "norm",
+                            linetype = "dashed", linewidth = 0.7, level = 0.95)
+    }
+    p + labs(x = ax1_lab, y = ax2_lab) +
       theme_minimal(base_size = 14) +
       theme(
         plot.background = element_rect(fill = "#1a2332", color = NA),
@@ -2972,6 +3074,15 @@ server <- function(input, output, session) {
         png(file, width = 800, height = 600)
         plot.new(); text(0.5, 0.5, paste("Error:", e$message)); dev.off()
       })
+    }
+  )
+
+  output$dl_rarefaction_png <- downloadHandler(
+    filename = function() paste0("Rarefaction_Curves_", Sys.Date(), ".png"),
+    content = function(file) {
+      req(rv$ps, input$rare_color)
+      p <- make_rarefaction_plot(get_active_ps(), input$rare_color, input$rare_step)
+      ggsave(file, plot = p, width = 12, height = 7, dpi = 300, bg = "#1a2332")
     }
   )
 
