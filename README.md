@@ -27,7 +27,7 @@ All R packages are installed automatically on first launch:
 ## How to Launch
 
 1. Click on `Code` in green and then download files using `Download ZIP`.
-2. Unzip and open the `app.R` file in Rstudio using the following command.
+2. Unzip and open the `dada2-16s-gui.R` file in Rstudio using the following command.
 
 ```r
 # From R console:
