@@ -89,8 +89,7 @@ The app opens in your default browser at `http://127.0.0.1:XXXX`.
 
 Your FASTQ files must be:
 1. **Demultiplexed** — one file per sample per direction
-2. **Primers/adapters removed** — no non-biological nucleotides
-3. **Matched order** — forward and reverse files correspond to same samples
+2. **Matched order** — forward and reverse files correspond to same samples
 
 Supported extensions: `.fastq`, `.fastq.gz`, `.fq`, `.fq.gz`
 
