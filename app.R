@@ -1,13 +1,13 @@
 # ============================================================================
-# DADA2 16S rRNA Analysis Pipeline — Shiny GUI
-# Full pipeline: QC → Filter → Dereplicate → Merge → Chimera → Taxonomy → Phyloseq
+# DADA2 16S rRNA Analysis Pipeline - Shiny GUI
+# Full pipeline: QC -> Filter -> Dereplicate -> Merge -> Chimera -> Taxonomy -> Phyloseq
 # ============================================================================
 
 # ── Package Management ───────────────────────────────────────────────────────
 
 required_cran <- c("shiny", "ggplot2", "tidyverse", "shinyjs",
-                   "DT", "shinycssloaders", "callr")
-required_bioc <- c("dada2", "phyloseq", "Biostrings", "DECIPHER")
+                   "DT", "shinycssloaders", "callr", "vegan")
+required_bioc <- c("dada2", "phyloseq", "Biostrings", "DECIPHER", "microbiome", "ANCOMBC")
 
 install_if_missing <- function() {
   # CRAN packages
@@ -38,6 +38,9 @@ library(phyloseq)
 library(Biostrings)
 library(DECIPHER)
 library(callr)
+library(vegan)
+library(microbiome)
+library(ANCOMBC)
 
 # ── Multithread Strategy ─────────────────────────────────────────────────────
 # DADA2's multithread=TRUE uses fork-based parallelism (mclapply) which
@@ -819,13 +822,14 @@ ui <- fluidPage(
       // Instant running indicator: inject DOM element immediately on click,
       // before Shiny's reactive flush. This ensures the user sees feedback instantly
       // even if the observeEvent handler has synchronous blocking work.
-      $(document).on('click', '#btn_filter, #btn_denoise, #btn_merge, #btn_taxonomy', function() {
+      $(document).on('click', '#btn_filter, #btn_denoise, #btn_merge, #btn_taxonomy, #btn_ancombc2', function() {
         var btnId = $(this).attr('id');
         var targetMap = {
           'btn_filter': 'progress_step3',
           'btn_denoise': 'progress_step4',
           'btn_merge': 'progress_step5',
-          'btn_taxonomy': 'progress_step6'
+          'btn_taxonomy': 'progress_step6',
+          'btn_ancombc2': 'progress_step10'
         };
         var target = targetMap[btnId];
         if (target) {
@@ -871,7 +875,11 @@ ui <- fluidPage(
     div(id = "step_nav_7", class = "step-pill", onclick = "Shiny.setInputValue('nav_step', 7, {priority: 'event'})",
       span(class = "step-number", "7"), "Phyloseq"),
     div(id = "step_nav_8", class = "step-pill", onclick = "Shiny.setInputValue('nav_step', 8, {priority: 'event'})",
-      span(class = "step-number", "8"), "Figures")
+      span(class = "step-number", "8"), "Figures"),
+    div(id = "step_nav_9", class = "step-pill", onclick = "Shiny.setInputValue('nav_step', 9, {priority: 'event'})",
+      span(class = "step-number", "9"), "PERMANOVA"),
+    div(id = "step_nav_10", class = "step-pill", onclick = "Shiny.setInputValue('nav_step', 10, {priority: 'event'})",
+      span(class = "step-number", "10"), "ANCOM-BC2")
   ),
 
   # ── Main content ──
@@ -936,7 +944,7 @@ ui <- fluidPage(
       ),
 
       div(class = "proceed-bar",
-        actionButton("proceed_1", "Proceed to Quality Profiles →", class = "btn-proceed",
+        actionButton("proceed_1", "Proceed to Quality Profiles ->", class = "btn-proceed",
                      icon = icon("arrow-right"))
       ),
 
@@ -968,7 +976,7 @@ ui <- fluidPage(
       uiOutput("qplot_cards"),
 
       div(class = "proceed-bar",
-        actionButton("proceed_2", "Proceed to Filter & Trim →", class = "btn-proceed",
+        actionButton("proceed_2", "Proceed to Filter & Trim ->", class = "btn-proceed",
                      icon = icon("arrow-right"))
       ),
 
@@ -1038,7 +1046,7 @@ ui <- fluidPage(
       ),
 
       div(class = "proceed-bar",
-        actionButton("proceed_3", "Proceed to Dereplication →", class = "btn-proceed",
+        actionButton("proceed_3", "Proceed to Dereplication ->", class = "btn-proceed",
                      icon = icon("arrow-right"))
       ),
 
@@ -1083,7 +1091,7 @@ ui <- fluidPage(
       ),
 
       div(class = "proceed-bar",
-        actionButton("proceed_4", "Proceed to Merge & Chimeras →", class = "btn-proceed",
+        actionButton("proceed_4", "Proceed to Merge & Chimeras ->", class = "btn-proceed",
                      icon = icon("arrow-right"))
       ),
 
@@ -1131,7 +1139,7 @@ ui <- fluidPage(
       ),
 
       div(class = "proceed-bar",
-        actionButton("proceed_5", "Proceed to Taxonomy →", class = "btn-proceed",
+        actionButton("proceed_5", "Proceed to Taxonomy ->", class = "btn-proceed",
                      icon = icon("arrow-right"))
       ),
 
@@ -1326,7 +1334,247 @@ ui <- fluidPage(
         )
       ),
 
+      div(class = "proceed-bar",
+        actionButton("proceed_8", "Proceed to PERMANOVA \u2192", class = "btn-proceed",
+                     icon = icon("arrow-right"))
+      ),
+
       div(class = "log-panel", id = "log_step8", htmlOutput("log8"))
+    )),
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # STEP 9: PERMANOVA
+    # ═══════════════════════════════════════════════════════════════════════
+    hidden(div(id = "panel_step9", class = "step-panel",
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon violet", icon("flask")),
+          "PERMANOVA Analysis"
+        ),
+        div(class = "card-description",
+          "Permutational Multivariate Analysis of Variance (PERMANOVA) tests whether community composition differs significantly between groups. Uses the vegan package."
+        ),
+        div(class = "grid-3",
+          div(
+            textInput("permanova_formula", "Formula",
+                      placeholder = "e.g. Treatment + Age"),
+            div(style = "font-size: 11px; color: var(--text-muted); margin-top: -8px; margin-bottom: 4px;",
+              "Variables from your metadata separated by +")
+          ),
+          selectInput("permanova_distance", "Distance Method",
+            choices = c("bray", "jaccard", "euclidean"), selected = "bray"),
+          numericInput("permanova_perm", "Number of Permutations", value = 9999, min = 99, max = 99999, step = 100)
+        ),
+        div(class = "card-description", style = "font-size: 12px; color: var(--text-muted);",
+          "Tip: For CLR-transformed data, Euclidean distance (Aitchison distance) is recommended."
+        ),
+        uiOutput("permanova_cmd_preview"),
+        div(style = "margin-top: 12px;",
+          actionButton("btn_permanova", "Run PERMANOVA", class = "btn-primary",
+                       icon = icon("calculator"))
+        )
+      ),
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon blue", icon("table")),
+          "PERMANOVA Results"
+        ),
+        div(class = "card-description",
+          "Adonis2 test results showing whether community composition differs significantly between groups."
+        ),
+        uiOutput("permanova_results_ui")
+      ),
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon amber", icon("balance-scale")),
+          "Betadisper - Homogeneity of Dispersion"
+        ),
+        div(class = "card-description",
+          "Tests whether group dispersions are homogeneous. A significant result here means differences detected by PERMANOVA may be due to differences in dispersion rather than location."
+        ),
+        uiOutput("betadisper_results_ui")
+      ),
+
+      uiOutput("pairwise_permanova_card"),
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon emerald", icon("download")),
+          "Export PERMANOVA Results"
+        ),
+        div(style = "display: flex; gap: 12px;",
+          downloadButton("dl_permanova_csv", "PERMANOVA Results (CSV)", class = "btn-download"),
+          downloadButton("dl_betadisper_csv", "Betadisper Results (CSV)", class = "btn-download"),
+          downloadButton("dl_pairwise_csv", "Pairwise PERMANOVA (CSV)", class = "btn-download")
+        )
+      ),
+
+      div(class = "proceed-bar",
+        actionButton("proceed_9", "Proceed to ANCOM-BC2 \u2192", class = "btn-proceed",
+                     icon = icon("arrow-right"))
+      ),
+
+      div(class = "log-panel", id = "log_step9", htmlOutput("log9"))
+    )),
+
+    # =====================================================================
+    # STEP 10: ANCOM-BC2
+    # =====================================================================
+    hidden(div(id = "panel_step10", class = "step-panel",
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon rose", icon("not-equal")),
+          "ANCOM-BC2 - Differential Abundance Analysis"
+        ),
+        div(class = "card-description",
+          "Analysis of Compositions of Microbiomes with Bias Correction 2 (ANCOM-BC2) identifies taxa whose absolute abundances differ significantly between groups. ANCOM-BC2 handles its own bias correction internally."
+        ),
+        div(class = "rerun-warning",
+          icon("info-circle"),
+          "ANCOM-BC2 uses the raw (untransformed) phyloseq object. Any transformation applied in Step 7 does not affect this analysis."
+        ),
+        div(class = "grid-2",
+          div(
+            textInput("ancom_fix_formula", "Fixed Effects Formula",
+                      placeholder = "e.g. Treatment + Age + Sex"),
+            div(style = "font-size: 11px; color: var(--text-muted); margin-top: -8px; margin-bottom: 12px;",
+              "Variables from your metadata separated by +")
+          ),
+          div(
+            textInput("ancom_rand_formula", "Random Effects Formula (optional)",
+                      placeholder = "e.g. (1 | Subject)"),
+            div(style = "font-size: 11px; color: var(--text-muted); margin-top: -8px; margin-bottom: 12px;",
+              "lme4-style random effects for repeated measures")
+          )
+        ),
+        div(class = "grid-3",
+          selectInput("ancom_group", "Group Variable (for global/pairwise tests)", choices = NULL),
+          selectInput("ancom_tax_level", "Taxonomic Level",
+            choices = c("Kingdom", "Phylum", "Class", "Order", "Family", "Genus"),
+            selected = "Genus"),
+          selectInput("ancom_p_adj", "P-value Adjustment Method",
+            choices = c("holm", "BH", "bonferroni", "fdr", "none"),
+            selected = "holm")
+        ),
+        div(class = "grid-3",
+          numericInput("ancom_prv_cut", "Prevalence Filter", value = 0.10, min = 0, max = 1, step = 0.05),
+          numericInput("ancom_lib_cut", "Library Size Cutoff", value = 1000, min = 0, step = 100),
+          numericInput("ancom_alpha", "Significance Level (alpha)", value = 0.05, min = 0.001, max = 0.2, step = 0.01)
+        ),
+
+        # ── Advanced Settings (collapsed by default) ──
+        tags$details(style = "margin-top: 16px; margin-bottom: 16px;",
+          tags$summary(style = "cursor: pointer; font-weight: 500; color: var(--text-secondary); font-size: 13px;",
+            icon("cog"), " Advanced Settings"
+          ),
+          div(style = "padding: 16px 0 0 0;",
+            div(class = "grid-3",
+              numericInput("ancom_pseudo", "Pseudo Count", value = 0, min = 0, step = 0.1),
+              checkboxInput("ancom_pseudo_sens", "Sensitivity Analysis", value = TRUE),
+              numericInput("ancom_s0_perc", "Regularization (s0_perc)", value = 0.05, min = 0, max = 1, step = 0.01)
+            ),
+            div(class = "grid-3",
+              checkboxInput("ancom_struc_zero", "Structural Zero Detection", value = TRUE),
+              checkboxInput("ancom_neg_lb", "Negative Lower Bound", value = TRUE),
+              numericInput("ancom_n_cl", "Parallel Clusters", value = 1, min = 1, max = 16, step = 1)
+            ),
+            div(class = "grid-2",
+              checkboxInput("ancom_global", "Global Test", value = TRUE),
+              checkboxInput("ancom_pairwise", "Pairwise Directional Test", value = TRUE)
+            ),
+            div(class = "grid-2",
+              checkboxInput("ancom_dunnet", "Dunnett's Type Test", value = FALSE),
+              checkboxInput("ancom_trend", "Trend Test", value = FALSE)
+            ),
+            div(class = "card-description", style = "font-weight: 500; color: var(--text-primary); margin-top: 8px; margin-bottom: 8px;",
+              "Iteration & EM Controls"),
+            div(class = "grid-4",
+              numericInput("ancom_iter_tol", "Iter Tolerance", value = 0.01, min = 1e-6, max = 1, step = 0.001),
+              numericInput("ancom_iter_max", "Iter Max Steps", value = 20, min = 1, max = 200, step = 1),
+              numericInput("ancom_em_tol", "EM Tolerance", value = 1e-5, min = 1e-8, max = 1, step = 1e-5),
+              numericInput("ancom_em_max", "EM Max Steps", value = 100, min = 1, max = 500, step = 10)
+            ),
+            div(class = "card-description", style = "font-weight: 500; color: var(--text-primary); margin-top: 8px; margin-bottom: 8px;",
+              "mdFDR Control"),
+            div(class = "grid-2",
+              selectInput("ancom_mdfdr_method", "FWER Control Method",
+                choices = c("holm", "bonferroni", "BH", "hochberg", "hommel", "none"),
+                selected = "holm"),
+              numericInput("ancom_mdfdr_B", "Bootstrap Samples (B)", value = 100, min = 10, max = 1000, step = 10)
+            )
+          )
+        ),
+
+        uiOutput("ancom_cmd_preview"),
+        div(style = "margin-top: 16px;",
+          actionButton("btn_ancombc2", "Run ANCOM-BC2", class = "btn-primary",
+                       icon = icon("play"))
+        ),
+        uiOutput("progress_step10")
+      ),
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon blue", icon("globe")),
+          "Global Test"
+        ),
+        div(class = "card-description",
+          "Tests whether each taxon is differentially abundant across any of the groups."
+        ),
+        DTOutput("ancom_global_dt") %>% withSpinner(type = 6, color = "#3b82f6"),
+        div(style = "margin-top: 12px;",
+          downloadButton("dl_ancom_global", "Download Global Test (CSV)", class = "btn-download")
+        )
+      ),
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon cyan", icon("exchange-alt")),
+          "Pairwise Directional Test"
+        ),
+        div(class = "card-description",
+          "Identifies which taxa are differentially abundant between each pair of groups, with direction of change."
+        ),
+        DTOutput("ancom_pairwise_dt") %>% withSpinner(type = 6, color = "#3b82f6"),
+        div(style = "margin-top: 12px;",
+          downloadButton("dl_ancom_pairwise", "Download Pairwise Results (CSV)", class = "btn-download")
+        )
+      ),
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon amber", icon("chart-area")),
+          "Volcano Plot"
+        ),
+        div(class = "card-description",
+          "Log fold-change vs -log10(adjusted p-value). Taxa above the significance threshold are colored."
+        ),
+        uiOutput("ancom_volcano_selector"),
+        plotOutput("ancom_volcano_plot", height = "500px") %>% withSpinner(type = 6, color = "#3b82f6"),
+        div(style = "margin-top: 12px;",
+          downloadButton("dl_ancom_volcano", "Download Volcano Plot (PNG)", class = "btn-download")
+        )
+      ),
+
+      div(class = "card",
+        div(class = "card-header",
+          div(class = "icon violet", icon("th")),
+          "Differential Abundance Heatmap"
+        ),
+        div(class = "card-description",
+          "Heatmap of log fold-changes for significantly differentially abundant taxa across comparisons."
+        ),
+        plotOutput("ancom_heatmap", height = "600px") %>% withSpinner(type = 6, color = "#3b82f6"),
+        div(style = "margin-top: 12px;",
+          downloadButton("dl_ancom_heatmap", "Download Heatmap (PNG)", class = "btn-download")
+        )
+      ),
+
+      div(class = "log-panel", id = "log_step10", htmlOutput("log10"))
     ))
 
   ) # end main-container
@@ -1367,15 +1615,20 @@ server <- function(input, output, session) {
     taxa = NULL,
     # Phyloseq
     ps = NULL, ps_transformed = NULL, transform_method = NULL, samdf = NULL,
+    # PERMANOVA
+    permanova_result = NULL, betadisper_result = NULL, pairwise_result = NULL,
+    # ANCOM-BC2
+    ancom_result = NULL, bg_ancom = NULL, bg_ancom_start = NULL,
     # Tracking
     track = NULL,
     # Logs
-    log1 = "", log2 = "", log3 = "", log4 = "", log5 = "", log6 = "", log7 = "", log8 = "",
+    log1 = "", log2 = "", log3 = "", log4 = "", log5 = "", log6 = "", log7 = "", log8 = "", log9 = "", log10 = "",
     # Step progress: list(pct, label, status)
     prog3 = list(pct = 0, label = "", status = "idle"),
     prog4 = list(pct = 0, label = "", status = "idle"),
     prog5 = list(pct = 0, label = "", status = "idle"),
-    prog6 = list(pct = 0, label = "", status = "idle")
+    prog6 = list(pct = 0, label = "", status = "idle"),
+    prog10 = list(pct = 0, label = "", status = "idle")
   )
 
   # ── Helper: update step progress ──
@@ -1416,6 +1669,7 @@ server <- function(input, output, session) {
   output$progress_step4 <- renderUI({ render_progress_bar(rv$prog4) })
   output$progress_step5 <- renderUI({ render_progress_bar(rv$prog5) })
   output$progress_step6 <- renderUI({ render_progress_bar(rv$prog6) })
+  output$progress_step10 <- renderUI({ render_progress_bar(rv$prog10) })
 
   # ── Session Save/Load ──────────────────────────────────────────────────
 
@@ -1453,7 +1707,7 @@ server <- function(input, output, session) {
         transform_method = rv$transform_method, samdf = rv$samdf,
         track = rv$track,
         log1 = rv$log1, log2 = rv$log2, log3 = rv$log3,
-        log4 = rv$log4, log5 = rv$log5, log6 = rv$log6, log7 = rv$log7, log8 = rv$log8,
+        log4 = rv$log4, log5 = rv$log5, log6 = rv$log6, log7 = rv$log7, log8 = rv$log8, log9 = rv$log9, log10 = rv$log10,
         # Save input parameters for reproducibility
         fwd_pattern = isolate(input$fwd_pattern),
         rev_pattern = isolate(input$rev_pattern),
@@ -1503,6 +1757,8 @@ server <- function(input, output, session) {
       rv$log6 <- session_data$log6
       rv$log7 <- session_data$log7
       rv$log8 <- if (!is.null(session_data$log8)) session_data$log8 else ""
+      rv$log9 <- if (!is.null(session_data$log9)) session_data$log9 else ""
+      rv$log10 <- if (!is.null(session_data$log10)) session_data$log10 else ""
 
       # Restore UI inputs
       updateTextInput(session, "data_path", value = session_data$data_path)
@@ -1522,8 +1778,8 @@ server <- function(input, output, session) {
       if (3 %in% rv$completed_steps) rv$filt_qplots_ready <- TRUE
 
       # Navigate to first incomplete step
-      all_steps <- 1:8
-      next_step <- min(setdiff(all_steps, rv$completed_steps), 8)
+      all_steps <- 1:10
+      next_step <- min(setdiff(all_steps, rv$completed_steps), 10)
       rv$current_step <- next_step
 
       # Validate file paths
@@ -1608,7 +1864,7 @@ server <- function(input, output, session) {
       tryCatch({
         load(session_file)
         step_names <- c("Setup & Files", "Quality Profiles", "Filter & Trim",
-                        "Dereplication", "Merge & Chimeras", "Taxonomy", "Phyloseq", "Figures")
+                        "Dereplication", "Merge & Chimeras", "Taxonomy", "Phyloseq", "Figures", "PERMANOVA", "ANCOM-BC2")
         completed <- session_data$completed_steps
         last_step <- if (length(completed) > 0) max(completed) else 0
         last_step_name <- if (last_step > 0) step_names[last_step] else "None"
@@ -1660,11 +1916,11 @@ server <- function(input, output, session) {
   observeEvent(input$nav_step, {
     step <- input$nav_step
     if (step %in% rv$completed_steps && step < max(rv$completed_steps, 0)) {
-      # User is going back to a completed step — warn about invalidation
+      # User is going back to a completed step - warn about invalidation
       later_steps <- rv$completed_steps[rv$completed_steps > step]
       if (length(later_steps) > 0) {
         step_names <- c("Setup & Files", "Quality Profiles", "Filter & Trim",
-                        "Dereplication", "Merge & Chimeras", "Taxonomy", "Phyloseq", "Figures")
+                        "Dereplication", "Merge & Chimeras", "Taxonomy", "Phyloseq", "Figures", "PERMANOVA", "ANCOM-BC2")
         invalidated <- paste(step_names[later_steps], collapse = ", ")
         showNotification(
           paste0("Re-running this step will invalidate subsequent completed steps: ", invalidated, "."),
@@ -1695,12 +1951,14 @@ server <- function(input, output, session) {
   output$log6 <- renderUI(HTML(rv$log6))
   output$log7 <- renderUI(HTML(rv$log7))
   output$log8 <- renderUI(HTML(rv$log8))
+  output$log9 <- renderUI(HTML(rv$log9))
+  output$log10 <- renderUI(HTML(rv$log10))
 
   # ── Navigation ──────────────────────────────────────────────────────────
   observe({
     step <- rv$current_step
     completed <- rv$completed_steps
-    for (i in 1:8) {
+    for (i in 1:10) {
       toggleClass(id = paste0("step_nav_", i), class = "active", condition = (i == step))
       toggleClass(id = paste0("step_nav_", i), class = "completed", condition = (i %in% completed & i != step))
       toggle(id = paste0("panel_step", i), condition = (i == step))
@@ -1709,6 +1967,9 @@ server <- function(input, output, session) {
     for (i in 1:7) {
       toggleState(id = paste0("proceed_", i), condition = (i %in% completed))
     }
+    # Proceed to PERMANOVA and ANCOM-BC2 are always enabled
+    shinyjs::enable("proceed_8")
+    shinyjs::enable("proceed_9")
   })
 
   # Proceed button click handlers
@@ -1719,6 +1980,11 @@ server <- function(input, output, session) {
   observeEvent(input$proceed_5, { rv$current_step <- 6 })
   observeEvent(input$proceed_6, { rv$current_step <- 7 })
   observeEvent(input$proceed_7, { rv$current_step <- 8 })
+  observeEvent(input$proceed_8, {
+    rv$completed_steps <- union(rv$completed_steps, 8)
+    rv$current_step <- 9
+  })
+  observeEvent(input$proceed_9, { rv$current_step <- 10 })
 
   # ═══════════════════════════════════════════════════════════════════════
   # STEP 1: Scan files & extract samples
@@ -1760,7 +2026,7 @@ server <- function(input, output, session) {
     if (!is.null(detected_fwd) && !is.null(detected_rev)) {
       updateTextInput(session, "fwd_pattern", value = detected_fwd)
       updateTextInput(session, "rev_pattern", value = detected_rev)
-      add_log(1, paste("Auto-detected patterns — Fwd:", detected_fwd, "  Rev:", detected_rev), "success")
+      add_log(1, paste("Auto-detected patterns - Fwd:", detected_fwd, "  Rev:", detected_rev), "success")
 
       # Load files with detected patterns
       fnFs <- sort(list.files(path, pattern = gsub("\\.", "\\\\.", detected_fwd), full.names = TRUE))
@@ -1796,7 +2062,7 @@ server <- function(input, output, session) {
     }
 
     if (length(fnFs) != length(fnRs)) {
-      add_log(1, paste("Warning: Unequal file counts — Fwd:", length(fnFs), "Rev:", length(fnRs)), "warn")
+      add_log(1, paste("Warning: Unequal file counts - Fwd:", length(fnFs), "Rev:", length(fnRs)), "warn")
     }
 
     rv$fnFs <- fnFs
@@ -1831,7 +2097,7 @@ server <- function(input, output, session) {
     preview <- paste(parts[idx], collapse = delim)
     tags$span(
       style = "font-family: 'JetBrains Mono', monospace; font-size: 13px;",
-      tags$span(style = "color: var(--text-muted);", paste0("Preview: \"", example_file, "\" → ")),
+      tags$span(style = "color: var(--text-muted);", paste0("Preview: \"", example_file, "\" -> ")),
       tags$span(style = "color: var(--accent-cyan); font-weight: 600;", paste0("\"", preview, "\""))
     )
   })
@@ -1849,7 +2115,7 @@ server <- function(input, output, session) {
         div(class = "stat-label", "Reverse Files")
       ),
       div(class = "stat-card",
-        div(class = "stat-value", ifelse(is.null(rv$sample_names), "—", length(rv$sample_names))),
+        div(class = "stat-value", ifelse(is.null(rv$sample_names), "-", length(rv$sample_names))),
         div(class = "stat-label", "Samples")
       )
     )
@@ -2528,7 +2794,7 @@ server <- function(input, output, session) {
     rv$meta_preview <- samdf
     var_names <- colnames(samdf)
 
-    # Auto-detect: if numeric with many unique values → continuous, else factor
+    # Auto-detect: if numeric with many unique values -> continuous, else factor
     auto_types <- sapply(var_names, function(v) {
       col <- samdf[[v]]
       if (is.numeric(col) && length(unique(col)) > 5) "continuous" else "factor"
@@ -2608,7 +2874,7 @@ server <- function(input, output, session) {
       rv$ps <- ps
       add_log(7, paste("Phyloseq object created:", ntaxa(ps), "taxa,", nsamples(ps), "samples."), "success")
 
-      # Update dropdown choices — only factor variables for grouping
+      # Update dropdown choices - only factor variables for grouping
       meta_vars <- colnames(samdf)
       factor_vars <- meta_vars[sapply(samdf, is.factor)]
       if (length(factor_vars) == 0) factor_vars <- meta_vars  # fallback
@@ -2618,6 +2884,7 @@ server <- function(input, output, session) {
       updateSelectInput(session, "pcoa_color", choices = c("None", meta_vars), selected = ifelse(length(meta_vars) > 1, meta_vars[1], "None"))
       updateSelectInput(session, "rare_color", choices = c("None", meta_vars), selected = ifelse(length(meta_vars) > 1, meta_vars[1], "None"))
       updateSelectInput(session, "bar_x", choices = factor_vars, selected = factor_vars[1])
+      updateSelectInput(session, "ancom_group", choices = factor_vars, selected = factor_vars[1])
 
       rv$completed_steps <- union(rv$completed_steps, 7)
       auto_save_session()
@@ -2636,6 +2903,7 @@ server <- function(input, output, session) {
           radioButtons("transform_method", "Transformation Method",
             choices = c("Rarefaction (subsample to even depth)" = "rarefy",
                         "Relative Abundance (proportions)" = "relative",
+                        "CLR (Centered Log-Ratio)" = "clr",
                         "No transformation (raw counts)" = "none"),
             selected = "rarefy")
         ),
@@ -2647,6 +2915,11 @@ server <- function(input, output, session) {
             div(style = "font-size: 12px; color: var(--text-muted); margin-top: 4px;",
               paste0("Minimum sample depth: ", format(min_depth, big.mark = ","),
                      " reads. Samples below this depth will be removed."))
+          ),
+          conditionalPanel(
+            condition = "input.transform_method == 'clr'",
+            div(style = "font-size: 12px; color: var(--text-muted); margin-top: 8px;",
+              "Centered Log-Ratio transformation addresses compositionality. Recommended distance method for ordination: Euclidean (Aitchison distance).")
           )
         )
       )
@@ -2661,6 +2934,7 @@ server <- function(input, output, session) {
     method_label <- switch(method,
       "rarefy" = paste0("Rarefied to ", format(min(sample_sums(rv$ps_transformed)), big.mark = ","), " reads/sample"),
       "relative" = "Relative abundance (proportions)",
+      "clr" = "Centered Log-Ratio (CLR) transformation",
       "none" = "Raw counts (no transformation)",
       method
     )
@@ -2671,7 +2945,7 @@ server <- function(input, output, session) {
              "Transformation Applied")
       ),
       div(style = "font-size: 13px; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace;",
-        paste0(method_label, " — ", n_samples, " samples, ", n_taxa, " ASVs"))
+        paste0(method_label, " \u2014 ", n_samples, " samples, ", n_taxa, " ASVs"))
     )
   })
 
@@ -2690,6 +2964,9 @@ server <- function(input, output, session) {
       } else if (method == "relative") {
         ps_t <- transform_sample_counts(rv$ps, function(x) x / sum(x))
         add_log(7, paste("Converted to relative abundance.", nsamples(ps_t), "samples."), "success")
+      } else if (method == "clr") {
+        ps_t <- microbiome::transform(rv$ps, "clr")
+        add_log(7, paste("CLR transformation applied.", nsamples(ps_t), "samples."), "success")
       } else {
         ps_t <- rv$ps
         add_log(7, "Using raw counts (no transformation).", "info")
@@ -2769,7 +3046,7 @@ server <- function(input, output, session) {
 
   # ── Alpha Diversity Plot (manual calculation, one point per sample) ──
   make_alpha_plot <- function(ps, x_var) {
-    # Calculate diversity metrics manually — one value per sample
+    # Calculate diversity metrics manually - one value per sample
     otu <- as(otu_table(ps), "matrix")
     if (taxa_are_rows(ps)) otu <- t(otu)
 
@@ -2835,7 +3112,7 @@ server <- function(input, output, session) {
     ps_prop <- transform_sample_counts(ps, function(otu) otu / sum(otu))
     ord <- ordinate(ps_prop, method = "NMDS", distance = distance)
     cv <- if (color_var == "None") NULL else color_var
-    p <- plot_ordination(ps_prop, ord, color = cv, title = paste("NMDS —", distance))
+    p <- plot_ordination(ps_prop, ord, color = cv, title = paste("NMDS -", distance))
     p <- p + geom_point(size = 4, alpha = 0.8)
     # Add dashed ellipses if color variable is set
     if (!is.null(cv)) {
@@ -2904,7 +3181,7 @@ server <- function(input, output, session) {
     ax1_lab <- paste0("PCoA1 [", var_explained[1], "%]")
     ax2_lab <- paste0("PCoA2 [", var_explained[2], "%]")
 
-    p <- plot_ordination(ps_prop, ord, color = cv, title = paste("PCoA —", distance))
+    p <- plot_ordination(ps_prop, ord, color = cv, title = paste("PCoA -", distance))
     p <- p + geom_point(size = 4, alpha = 0.8)
     # Add dashed ellipses if color variable is set
     if (!is.null(cv)) {
@@ -3086,12 +3363,596 @@ server <- function(input, output, session) {
     }
   )
 
-  # ── Phyloseq object download (.rds) — saves transformed version ──
+  # ── Phyloseq object download (.rds) - saves transformed version ──
   output$dl_phyloseq_rds <- downloadHandler(
     filename = function() paste0("phyloseq_object_", Sys.Date(), ".rds"),
     content = function(file) {
       req(rv$ps)
       saveRDS(get_active_ps(), file)
+    }
+  )
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # STEP 9: PERMANOVA
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # Command preview
+  output$permanova_cmd_preview <- renderUI({
+    formula_text <- trimws(input$permanova_formula)
+    dist_method <- input$permanova_distance
+    n_perm <- input$permanova_perm
+    if (!nzchar(formula_text)) return(NULL)
+
+    cmd1 <- paste0("dist_mat <- vegdist(otu_table, method = \"", dist_method, "\")")
+    cmd2 <- paste0("adonis2(dist_mat ~ ", formula_text, ", data = sample_data, permutations = ", n_perm, ")")
+    # betadisper uses the first variable in the formula
+    first_var <- trimws(strsplit(formula_text, "\\+|\\*|:")[[1]][1])
+    cmd3 <- paste0("betadisper(dist_mat, groups = sample_data$", first_var, ")")
+
+    div(class = "log-panel", style = "margin-top: 12px; max-height: none; padding: 14px;",
+      div(style = "font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;",
+        "Command Preview"),
+      div(class = "log-info", style = "margin-bottom: 4px;", cmd1),
+      div(class = "log-info", style = "margin-bottom: 4px;", cmd2),
+      div(class = "log-info", cmd3)
+    )
+  })
+
+  observeEvent(input$btn_permanova, {
+    req(rv$ps)
+    formula_text <- trimws(input$permanova_formula)
+    if (!nzchar(formula_text)) {
+      add_log(9, "Please enter a formula.", "error")
+      return()
+    }
+    add_log(9, paste("Running PERMANOVA with formula:", formula_text, "..."))
+
+    tryCatch({
+      ps_active <- get_active_ps()
+      sdata <- as(sample_data(ps_active), "data.frame")
+      dist_method <- input$permanova_distance
+      n_perm <- input$permanova_perm
+
+      # Get OTU matrix
+      otu <- as(otu_table(ps_active), "matrix")
+      if (taxa_are_rows(ps_active)) otu <- t(otu)
+
+      # Calculate distance matrix
+      dist_mat <- vegdist(otu, method = dist_method)
+
+      # Run PERMANOVA (adonis2) with user formula
+      formula_str <- as.formula(paste("dist_mat ~", formula_text))
+      perm_result <- adonis2(formula_str, data = sdata, permutations = n_perm)
+      rv$permanova_result <- perm_result
+      add_log(9, paste("PERMANOVA complete. p-value:", round(perm_result$`Pr(>F)`[1], 3)), "success")
+
+      # Run betadisper using the first variable in the formula
+      first_var <- trimws(strsplit(formula_text, "\\+|\\*|:")[[1]][1])
+      if (first_var %in% colnames(sdata)) {
+        groups <- sdata[[first_var]]
+        bd <- betadisper(dist_mat, groups)
+        bd_test <- permutest(bd, pairwise = TRUE, permutations = n_perm)
+        rv$betadisper_result <- list(betadisper = bd, permutest = bd_test)
+        add_log(9, paste("Betadisper complete (on", first_var, "). p-value:", round(bd_test$tab$`Pr(>F)`[1], 3)), "success")
+
+        # Pairwise PERMANOVA if >2 groups (using first variable only)
+        group_levels <- levels(as.factor(groups))
+        if (length(group_levels) > 2) {
+          add_log(9, "Running pairwise PERMANOVA...")
+          pairs <- combn(group_levels, 2, simplify = FALSE)
+          pair_results <- lapply(pairs, function(pair) {
+            idx <- groups %in% pair
+            sub_otu <- otu[idx, , drop = FALSE]
+            sub_sdata <- sdata[idx, , drop = FALSE]
+            sub_dist <- vegdist(sub_otu, method = dist_method)
+            sub_formula <- as.formula(paste("sub_dist ~", first_var))
+            res <- adonis2(sub_formula, data = sub_sdata, permutations = n_perm)
+            data.frame(
+              Group1 = pair[1], Group2 = pair[2],
+              F_value = round(res$F[1], 3),
+              R2 = round(res$R2[1], 3),
+              p_value = round(res$`Pr(>F)`[1], 3),
+              stringsAsFactors = FALSE
+            )
+          })
+          pairwise_df <- do.call(rbind, pair_results)
+          pairwise_df$p_adjusted <- round(p.adjust(pairwise_df$p_value, method = "bonferroni"), 3)
+          rv$pairwise_result <- pairwise_df
+          add_log(9, paste("Pairwise PERMANOVA complete.", nrow(pairwise_df), "comparisons."), "success")
+        } else {
+          rv$pairwise_result <- NULL
+          add_log(9, "Only 2 groups - pairwise PERMANOVA not needed.", "info")
+        }
+      } else {
+        add_log(9, paste("Variable", first_var, "not found in metadata. Betadisper skipped."), "warn")
+        rv$betadisper_result <- NULL
+        rv$pairwise_result <- NULL
+      }
+
+      rv$completed_steps <- union(rv$completed_steps, 9)
+      auto_save_session()
+    }, error = function(e) {
+      add_log(9, paste("PERMANOVA error:", e$message), "error")
+    })
+  })
+
+  # ── PERMANOVA results renderers ──
+  output$permanova_results_ui <- renderUI({
+    req(rv$permanova_result)
+    res <- rv$permanova_result
+    df <- as.data.frame(res)
+    df$Term <- rownames(df)
+    df <- df[, c("Term", "Df", "SumOfSqs", "R2", "F", "Pr(>F)")]
+    colnames(df) <- c("Term", "Df", "Sum of Squares", "R2", "F statistic", "p-value")
+
+    # Round all numeric columns to 3 decimal places
+    num_cols <- c("Sum of Squares", "R2", "F statistic", "p-value")
+    for (col in num_cols) df[[col]] <- round(df[[col]], 3)
+
+    sig <- df$`p-value`[1]
+    sig_text <- if (!is.na(sig) && sig < 0.001) "***" else if (!is.na(sig) && sig < 0.01) "**" else if (!is.na(sig) && sig < 0.05) "*" else "ns"
+    sig_color <- if (!is.na(sig) && sig < 0.05) "var(--accent-emerald)" else "var(--accent-amber)"
+
+    tagList(
+      div(class = "stat-card", style = "text-align: left; padding: 14px 18px; margin-bottom: 16px;",
+        div(style = paste0("font-size: 14px; font-weight: 600; color: ", sig_color, ";"),
+          paste0("p-value = ", format(sig, nsmall = 3), "  ", sig_text)
+        ),
+        div(style = "font-size: 13px; color: var(--text-secondary); margin-top: 4px;",
+          paste0("R2 = ", format(df$R2[1], nsmall = 3),
+                 " | F = ", format(df$`F statistic`[1], nsmall = 3),
+                 " | Permutations: ", input$permanova_perm)
+        )
+      ),
+      DTOutput("permanova_dt")
+    )
+  })
+
+  output$permanova_dt <- renderDT({
+    req(rv$permanova_result)
+    res <- rv$permanova_result
+    df <- as.data.frame(res)
+    df$Term <- rownames(df)
+    df <- df[, c("Term", "Df", "SumOfSqs", "R2", "F", "Pr(>F)")]
+    colnames(df) <- c("Term", "Df", "Sum of Squares", "R2", "F statistic", "p-value")
+    num_cols <- c("Sum of Squares", "R2", "F statistic", "p-value")
+    for (col in num_cols) df[[col]] <- round(df[[col]], 3)
+    datatable(df, options = list(dom = "t", pageLength = 10), rownames = FALSE, class = "compact")
+  })
+
+  output$betadisper_results_ui <- renderUI({
+    req(rv$betadisper_result)
+    bd_test <- rv$betadisper_result$permutest
+    tab <- as.data.frame(bd_test$tab)
+    tab$Term <- rownames(tab)
+    tab <- tab[, c("Term", "Df", "Sum Sq", "Mean Sq", "F", "N.Perm", "Pr(>F)")]
+
+    sig <- tab$`Pr(>F)`[1]
+    sig_color <- if (!is.na(sig) && sig < 0.05) "var(--accent-rose)" else "var(--accent-emerald)"
+    interp <- if (!is.na(sig) && sig < 0.05) {
+      "Significant - group dispersions are NOT homogeneous. PERMANOVA results should be interpreted with caution."
+    } else {
+      "Not significant - group dispersions are homogeneous. PERMANOVA results are reliable."
+    }
+
+    tagList(
+      div(class = "stat-card", style = "text-align: left; padding: 14px 18px; margin-bottom: 16px;",
+        div(style = paste0("font-size: 14px; font-weight: 600; color: ", sig_color, ";"),
+          paste0("Betadisper p-value = ", format(round(sig, 3), nsmall = 3))
+        ),
+        div(style = "font-size: 13px; color: var(--text-secondary); margin-top: 4px;", interp)
+      ),
+      DTOutput("betadisper_dt")
+    )
+  })
+
+  output$betadisper_dt <- renderDT({
+    req(rv$betadisper_result)
+    bd_test <- rv$betadisper_result$permutest
+    tab <- as.data.frame(bd_test$tab)
+    tab$Term <- rownames(tab)
+    tab <- tab[, c("Term", "Df", "Sum Sq", "Mean Sq", "F", "N.Perm", "Pr(>F)")]
+    num_cols <- c("Sum Sq", "Mean Sq", "F", "Pr(>F)")
+    for (col in num_cols) tab[[col]] <- round(tab[[col]], 3)
+    datatable(tab, options = list(dom = "t", pageLength = 10), rownames = FALSE, class = "compact")
+  })
+
+  output$pairwise_permanova_card <- renderUI({
+    req(rv$pairwise_result)
+    div(class = "card",
+      div(class = "card-header",
+        div(class = "icon cyan", icon("exchange-alt")),
+        "Pairwise PERMANOVA"
+      ),
+      div(class = "card-description",
+        "Pairwise comparisons between all group pairs with Bonferroni-adjusted p-values."
+      ),
+      DTOutput("pairwise_dt")
+    )
+  })
+
+  output$pairwise_dt <- renderDT({
+    req(rv$pairwise_result)
+    datatable(rv$pairwise_result, options = list(dom = "t", pageLength = 20, scrollX = TRUE),
+              rownames = FALSE, class = "compact")
+  })
+
+  # ── PERMANOVA download handlers ──
+  output$dl_permanova_csv <- downloadHandler(
+    filename = function() paste0("PERMANOVA_results_", Sys.Date(), ".csv"),
+    content = function(file) {
+      req(rv$permanova_result)
+      df <- as.data.frame(rv$permanova_result)
+      df$Term <- rownames(df)
+      write.csv(df, file, row.names = FALSE)
+    }
+  )
+
+  output$dl_betadisper_csv <- downloadHandler(
+    filename = function() paste0("Betadisper_results_", Sys.Date(), ".csv"),
+    content = function(file) {
+      req(rv$betadisper_result)
+      df <- as.data.frame(rv$betadisper_result$permutest$tab)
+      df$Term <- rownames(df)
+      write.csv(df, file, row.names = FALSE)
+    }
+  )
+
+  output$dl_pairwise_csv <- downloadHandler(
+    filename = function() paste0("Pairwise_PERMANOVA_", Sys.Date(), ".csv"),
+    content = function(file) {
+      if (!is.null(rv$pairwise_result)) {
+        write.csv(rv$pairwise_result, file, row.names = FALSE)
+      } else {
+        write.csv(data.frame(Note = "Pairwise PERMANOVA not applicable (2 or fewer groups)"), file, row.names = FALSE)
+      }
+    }
+  )
+
+  # =====================================================================
+  # STEP 10: ANCOM-BC2
+  # =====================================================================
+
+  # Command preview
+  output$ancom_cmd_preview <- renderUI({
+    fix_f <- trimws(input$ancom_fix_formula)
+    rand_f <- trimws(input$ancom_rand_formula)
+    grp <- input$ancom_group
+    tax <- input$ancom_tax_level
+    if (!nzchar(fix_f)) return(NULL)
+
+    rand_line <- if (nzchar(rand_f)) paste0('         rand_formula = "', rand_f, '",\n') else ""
+
+    cmd <- paste0('ancombc2(data = ps, tax_level = "', tax, '",\n',
+                  '         fix_formula = "', fix_f, '",\n',
+                  rand_line,
+                  '         group = "', grp, '",\n',
+                  '         p_adj_method = "', input$ancom_p_adj, '",\n',
+                  '         pseudo = ', input$ancom_pseudo, ', pseudo_sens = ', input$ancom_pseudo_sens, ',\n',
+                  '         prv_cut = ', input$ancom_prv_cut, ', lib_cut = ', input$ancom_lib_cut, ',\n',
+                  '         s0_perc = ', input$ancom_s0_perc, ', alpha = ', input$ancom_alpha, ',\n',
+                  '         struc_zero = ', input$ancom_struc_zero, ', neg_lb = ', input$ancom_neg_lb, ',\n',
+                  '         n_cl = ', input$ancom_n_cl, ',\n',
+                  '         global = ', input$ancom_global, ', pairwise = ', input$ancom_pairwise, ',\n',
+                  '         dunnet = ', input$ancom_dunnet, ', trend = ', input$ancom_trend, ')')
+
+    div(class = "log-panel", style = "margin-top: 12px; max-height: none; padding: 14px;",
+      div(style = "font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;",
+        "Command Preview"),
+      div(class = "log-info", tags$pre(style = "margin: 0; white-space: pre-wrap; color: var(--accent-cyan); font-size: 12px;", cmd))
+    )
+  })
+
+  # Run ANCOM-BC2 asynchronously
+  observeEvent(input$btn_ancombc2, {
+    req(rv$ps, input$ancom_fix_formula)
+    fix_f <- trimws(input$ancom_fix_formula)
+    rand_f <- trimws(input$ancom_rand_formula)
+    grp <- input$ancom_group
+    tax <- input$ancom_tax_level
+
+    if (!nzchar(fix_f)) {
+      add_log(10, "Please enter a fixed effects formula.", "error")
+      return()
+    }
+
+    rand_formula <- if (nzchar(rand_f)) rand_f else NULL
+
+    add_log(10, paste("Running ANCOM-BC2 at", tax, "level with fix_formula:", fix_f,
+                      if (!is.null(rand_formula)) paste("| rand_formula:", rand_formula) else ""))
+    set_progress(10, 0, "Launching ANCOM-BC2 (this may take several minutes)...", "running")
+    shinyjs::disable("btn_ancombc2")
+
+    rv$bg_ancom_start <- Sys.time()
+    rv$bg_ancom <- callr::r_bg(
+      function(ps, tax_level, fix_formula, rand_formula, group,
+               p_adj_method, pseudo, pseudo_sens, prv_cut, lib_cut, s0_perc,
+               struc_zero, neg_lb, alpha, n_cl,
+               global, pairwise, dunnet, trend,
+               iter_tol, iter_max, em_tol, em_max,
+               mdfdr_method, mdfdr_B) {
+        library(ANCOMBC)
+        library(phyloseq)
+        ancombc2(data = ps, tax_level = tax_level,
+                 fix_formula = fix_formula,
+                 rand_formula = rand_formula,
+                 group = group,
+                 p_adj_method = p_adj_method,
+                 pseudo = pseudo, pseudo_sens = pseudo_sens,
+                 prv_cut = prv_cut, lib_cut = lib_cut,
+                 s0_perc = s0_perc,
+                 struc_zero = struc_zero, neg_lb = neg_lb,
+                 alpha = alpha, n_cl = n_cl, verbose = FALSE,
+                 global = global, pairwise = pairwise,
+                 dunnet = dunnet, trend = trend,
+                 iter_control = list(tol = iter_tol, max_iter = iter_max, verbose = FALSE),
+                 em_control = list(tol = em_tol, max_iter = em_max),
+                 mdfdr_control = list(fwer_ctrl_method = mdfdr_method, B = mdfdr_B))
+      },
+      args = list(
+        ps = rv$ps,
+        tax_level = tax,
+        fix_formula = fix_f,
+        rand_formula = rand_formula,
+        group = grp,
+        p_adj_method = input$ancom_p_adj,
+        pseudo = input$ancom_pseudo,
+        pseudo_sens = input$ancom_pseudo_sens,
+        prv_cut = input$ancom_prv_cut,
+        lib_cut = input$ancom_lib_cut,
+        s0_perc = input$ancom_s0_perc,
+        struc_zero = input$ancom_struc_zero,
+        neg_lb = input$ancom_neg_lb,
+        alpha = input$ancom_alpha,
+        n_cl = input$ancom_n_cl,
+        global = input$ancom_global,
+        pairwise = input$ancom_pairwise,
+        dunnet = input$ancom_dunnet,
+        trend = input$ancom_trend,
+        iter_tol = input$ancom_iter_tol,
+        iter_max = input$ancom_iter_max,
+        em_tol = input$ancom_em_tol,
+        em_max = input$ancom_em_max,
+        mdfdr_method = input$ancom_mdfdr_method,
+        mdfdr_B = input$ancom_mdfdr_B
+      ),
+      supervise = TRUE
+    )
+  })
+
+  # Poll for ANCOM-BC2 completion
+  observe({
+    req(rv$bg_ancom)
+    if (rv$bg_ancom$is_alive()) {
+      elapsed <- as.numeric(difftime(Sys.time(), rv$bg_ancom_start, units = "secs"))
+      elapsed_txt <- if (elapsed > 60) paste0(round(elapsed/60, 1), " min") else paste0(round(elapsed), "s")
+      set_progress(10, 0, paste0("ANCOM-BC2 running... (", elapsed_txt, " elapsed)"), "running")
+      invalidateLater(2000)
+    } else {
+      tryCatch({
+        result <- rv$bg_ancom$get_result()
+        rv$ancom_result <- result
+        n_global <- if (!is.null(result$res_global)) sum(result$res_global$diff_abn, na.rm = TRUE) else 0
+        add_log(10, paste("ANCOM-BC2 complete.", n_global, "globally differentially abundant taxa detected."), "success")
+        set_progress(10, 100, "ANCOM-BC2 complete", "done")
+        rv$completed_steps <- union(rv$completed_steps, 10)
+        auto_save_session()
+      }, error = function(e) {
+        add_log(10, paste("ANCOM-BC2 error:", e$message), "error")
+        set_progress(10, 0, paste("Error:", e$message), "error")
+      })
+      shinyjs::enable("btn_ancombc2")
+      rv$bg_ancom <- NULL
+    }
+  })
+
+  # ── Global test table ──
+  output$ancom_global_dt <- renderDT({
+    req(rv$ancom_result)
+    res <- rv$ancom_result$res_global
+    if (is.null(res) || nrow(res) == 0) {
+      # Fallback: show primary result summary
+      res <- rv$ancom_result$res
+      if (is.null(res) || nrow(res) == 0) return(NULL)
+    }
+    num_cols <- sapply(res, is.numeric)
+    res[num_cols] <- lapply(res[num_cols], round, 3)
+    datatable(res, options = list(pageLength = 15, scrollX = TRUE, dom = "frtip"),
+              rownames = FALSE, class = "compact")
+  })
+
+  # ── Pairwise directional test table ──
+  output$ancom_pairwise_dt <- renderDT({
+    req(rv$ancom_result)
+    res <- rv$ancom_result$res_pair
+    if (is.null(res) || nrow(res) == 0) {
+      # Fallback: show primary result
+      res <- rv$ancom_result$res
+      if (is.null(res) || nrow(res) == 0) return(NULL)
+    }
+    num_cols <- sapply(res, is.numeric)
+    res[num_cols] <- lapply(res[num_cols], round, 3)
+    datatable(res, options = list(pageLength = 15, scrollX = TRUE, dom = "frtip"),
+              rownames = FALSE, class = "compact")
+  })
+
+  # ── Volcano plot ──
+  output$ancom_volcano_selector <- renderUI({
+    req(rv$ancom_result)
+    # Try res_pair first, then fall back to res (primary)
+    res <- rv$ancom_result$res_pair
+    if (is.null(res) || nrow(res) == 0) res <- rv$ancom_result$res
+    if (is.null(res)) return(NULL)
+
+    # Find lfc columns
+    lfc_cols <- grep("^lfc_|^lfc\\.", colnames(res), value = TRUE)
+    if (length(lfc_cols) == 0) return(NULL)
+    comparisons <- gsub("^lfc_|^lfc\\.", "", lfc_cols)
+    selectInput("ancom_volcano_comp", "Select Comparison",
+                choices = comparisons, selected = comparisons[1])
+  })
+
+  make_volcano_plot <- function(result, comparison, alpha) {
+    # Try res_pair first, then res
+    res <- result$res_pair
+    if (is.null(res) || nrow(res) == 0) res <- result$res
+    if (is.null(res)) return(NULL)
+
+    # Try different column naming patterns
+    lfc_col <- NULL
+    p_col <- NULL
+    diff_col <- NULL
+    for (prefix in c("lfc_", "lfc.")) {
+      candidate <- paste0(prefix, comparison)
+      if (candidate %in% colnames(res)) { lfc_col <- candidate; break }
+    }
+    for (prefix in c("q_", "q.")) {
+      candidate <- paste0(prefix, comparison)
+      if (candidate %in% colnames(res)) { p_col <- candidate; break }
+    }
+    for (prefix in c("diff_", "diff.")) {
+      candidate <- paste0(prefix, comparison)
+      if (candidate %in% colnames(res)) { diff_col <- candidate; break }
+    }
+
+    if (is.null(lfc_col) || is.null(p_col)) return(NULL)
+
+    df <- data.frame(
+      taxon = res$taxon,
+      lfc = res[[lfc_col]],
+      qval = res[[p_col]],
+      stringsAsFactors = FALSE
+    )
+    if (!is.null(diff_col)) {
+      df$diff <- res[[diff_col]]
+    } else {
+      df$diff <- df$qval < alpha
+    }
+    df <- df[complete.cases(df), ]
+    df$neg_log10_q <- -log10(df$qval + 1e-300)
+    df$Significant <- ifelse(df$diff, "Yes", "No")
+
+    ggplot(df, aes(x = lfc, y = neg_log10_q, color = Significant)) +
+      geom_point(size = 2.5, alpha = 0.7) +
+      scale_color_manual(values = c("No" = "#5a6a80", "Yes" = "#f43f5e")) +
+      geom_hline(yintercept = -log10(alpha), linetype = "dashed", color = "#f59e0b", linewidth = 0.5) +
+      geom_vline(xintercept = 0, linetype = "dashed", color = "#8899b0", linewidth = 0.3) +
+      labs(title = paste("Volcano Plot -", comparison),
+           x = "Log Fold Change", y = "-log10(q-value)") +
+      theme_minimal(base_size = 14) +
+      theme(
+        plot.background = element_rect(fill = "#1a2332", color = NA),
+        panel.background = element_rect(fill = "#1a2332", color = NA),
+        legend.background = element_rect(fill = "#1a2332", color = NA),
+        legend.key = element_rect(fill = "#1a2332", color = NA),
+        text = element_text(color = "#e8ecf4"),
+        axis.text = element_text(color = "#8899b0"),
+        panel.grid.major = element_line(color = "#2a3a52"),
+        panel.grid.minor = element_blank(),
+        plot.title = element_text(size = 14, face = "bold")
+      )
+  }
+
+  output$ancom_volcano_plot <- renderPlot({
+    req(rv$ancom_result, input$ancom_volcano_comp)
+    make_volcano_plot(rv$ancom_result, input$ancom_volcano_comp, input$ancom_alpha)
+  })
+
+  # ── Heatmap of DA taxa ──
+  make_ancom_heatmap <- function(result) {
+    # Try res_pair first, then res
+    res <- result$res_pair
+    if (is.null(res) || nrow(res) == 0) res <- result$res
+    if (is.null(res)) return(NULL)
+
+    # Find all lfc and diff columns
+    lfc_cols <- grep("^lfc_|^lfc\\.", colnames(res), value = TRUE)
+    diff_cols <- grep("^diff_|^diff\\.", colnames(res), value = TRUE)
+
+    if (length(lfc_cols) == 0) return(NULL)
+
+    # Filter to only significant taxa (significant in at least one comparison)
+    sig_mask <- apply(res[diff_cols], 1, function(x) any(x, na.rm = TRUE))
+    if (sum(sig_mask) == 0) {
+      plot.new()
+      text(0.5, 0.5, "No differentially abundant taxa detected.", col = "#8899b0", cex = 1.4)
+      return()
+    }
+
+    res_sig <- res[sig_mask, ]
+    lfc_mat <- as.data.frame(res_sig[lfc_cols])
+    rownames(lfc_mat) <- res_sig$taxon
+    colnames(lfc_mat) <- gsub("^lfc_|^lfc\\.", "", colnames(lfc_mat))
+
+    # Reshape for ggplot
+    lfc_mat$taxon <- rownames(lfc_mat)
+    df_long <- tidyr::pivot_longer(lfc_mat, cols = -taxon, names_to = "Comparison", values_to = "LFC")
+    df_long <- df_long[complete.cases(df_long), ]
+
+    ggplot(df_long, aes(x = Comparison, y = taxon, fill = LFC)) +
+      geom_tile(color = "#2a3a52", linewidth = 0.3) +
+      scale_fill_gradient2(low = "#3b82f6", mid = "#1a2332", high = "#f43f5e", midpoint = 0,
+                           name = "Log FC") +
+      labs(title = "Differentially Abundant Taxa - Log Fold Changes", x = "", y = "") +
+      theme_minimal(base_size = 12) +
+      theme(
+        plot.background = element_rect(fill = "#1a2332", color = NA),
+        panel.background = element_rect(fill = "#1a2332", color = NA),
+        legend.background = element_rect(fill = "#1a2332", color = NA),
+        legend.key = element_rect(fill = "#1a2332", color = NA),
+        text = element_text(color = "#e8ecf4"),
+        axis.text = element_text(color = "#8899b0"),
+        axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+        axis.text.y = element_text(size = 9),
+        panel.grid = element_blank(),
+        plot.title = element_text(size = 14, face = "bold")
+      )
+  }
+
+  output$ancom_heatmap <- renderPlot({
+    req(rv$ancom_result)
+    make_ancom_heatmap(rv$ancom_result)
+  })
+
+  # ── ANCOM-BC2 download handlers ──
+  output$dl_ancom_global <- downloadHandler(
+    filename = function() paste0("ANCOMBC2_global_test_", Sys.Date(), ".csv"),
+    content = function(file) {
+      req(rv$ancom_result)
+      res <- rv$ancom_result$res_global
+      if (is.null(res) || nrow(res) == 0) res <- rv$ancom_result$res
+      if (!is.null(res)) write.csv(res, file, row.names = FALSE)
+      else write.csv(data.frame(Note = "No results available"), file, row.names = FALSE)
+    }
+  )
+
+  output$dl_ancom_pairwise <- downloadHandler(
+    filename = function() paste0("ANCOMBC2_pairwise_", Sys.Date(), ".csv"),
+    content = function(file) {
+      req(rv$ancom_result)
+      res <- rv$ancom_result$res_pair
+      if (is.null(res) || nrow(res) == 0) res <- rv$ancom_result$res
+      if (!is.null(res)) write.csv(res, file, row.names = FALSE)
+      else write.csv(data.frame(Note = "No results available"), file, row.names = FALSE)
+    }
+  )
+
+  output$dl_ancom_volcano <- downloadHandler(
+    filename = function() paste0("ANCOMBC2_volcano_", Sys.Date(), ".png"),
+    content = function(file) {
+      req(rv$ancom_result, input$ancom_volcano_comp)
+      p <- make_volcano_plot(rv$ancom_result, input$ancom_volcano_comp, input$ancom_alpha)
+      ggsave(file, plot = p, width = 10, height = 7, dpi = 300, bg = "#1a2332")
+    }
+  )
+
+  output$dl_ancom_heatmap <- downloadHandler(
+    filename = function() paste0("ANCOMBC2_heatmap_", Sys.Date(), ".png"),
+    content = function(file) {
+      req(rv$ancom_result)
+      p <- make_ancom_heatmap(rv$ancom_result)
+      ggsave(file, plot = p, width = 12, height = max(8, sum(rv$ancom_result$res_pair$diff_abn, na.rm = TRUE) * 0.3 + 4),
+             dpi = 300, bg = "#1a2332")
     }
   )
 
