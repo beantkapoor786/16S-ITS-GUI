@@ -197,9 +197,6 @@ All pipeline state is saved automatically to your data directory after each step
 ### Quality Profiles
 ![Quality Profiles Screenshot](images/16S/02_quality_plots_forward_reads.png)
 
-### Primer Removal (ITS only)
-![Primer Removal Screenshot](screenshots/03_primers.png)
-
 ### Filter & Trim
 ![Filter Screenshot](images/16S/03_filter_and_trim.png)
 
