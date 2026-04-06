@@ -128,6 +128,15 @@ body {
   position: sticky;
   top: 0;
   z-index: 1000;
+  overflow: hidden;
+}
+
+.app-header-bacteria {
+  flex: 1;
+  height: 50px;
+  opacity: 0.07;
+  pointer-events: none;
+  margin-left: auto;
 }
 
 .app-logo {
@@ -855,7 +864,37 @@ ui <- fluidPage(
     div(
       div(class = "app-title", "DADA2 Pipeline"),
       div(class = "app-subtitle", "16S rRNA Amplicon Sequence Analysis")
-    )
+    ),
+    HTML('<svg class="app-header-bacteria" viewBox="0 0 900 80" preserveAspectRatio="xMaxYMid meet" xmlns="http://www.w3.org/2000/svg">
+      <g fill="#e8ecf4" stroke="#e8ecf4">
+        <!-- rod with flagella -->
+        <ellipse cx="80" cy="40" rx="38" ry="14" transform="rotate(-12 80 40)" fill="#e8ecf4" stroke="none"/>
+        <path d="M48 32 Q32 18 20 24 Q10 30 4 20" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        <path d="M45 38 Q28 30 16 38 Q6 44 0 36" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <!-- coccus pair -->
+        <circle cx="175" cy="32" r="12" fill="#e8ecf4" stroke="none"/>
+        <circle cx="195" cy="28" r="9" fill="#e8ecf4" stroke="none"/>
+        <!-- spirillum -->
+        <path d="M240 42 Q260 22 280 42 Q300 62 320 42 Q340 22 360 42 Q380 62 400 42" stroke-width="7" fill="none" stroke-linecap="round"/>
+        <!-- small rod -->
+        <ellipse cx="460" cy="38" rx="30" ry="11" transform="rotate(8 460 38)" fill="#e8ecf4" stroke="none"/>
+        <!-- cocci cluster -->
+        <circle cx="540" cy="35" r="9" fill="#e8ecf4" stroke="none"/>
+        <circle cx="555" cy="28" r="7" fill="#e8ecf4" stroke="none"/>
+        <circle cx="548" cy="48" r="8" fill="#e8ecf4" stroke="none"/>
+        <!-- another rod with flagella -->
+        <ellipse cx="630" cy="42" rx="35" ry="12" transform="rotate(-18 630 42)" fill="#e8ecf4" stroke="none"/>
+        <path d="M600 34 Q585 20 572 26" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M598 40 Q582 32 570 40" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+        <!-- vibrio -->
+        <path d="M710 50 Q730 20 750 35 Q770 50 780 30" stroke-width="8" fill="none" stroke-linecap="round"/>
+        <!-- small cocci -->
+        <circle cx="830" cy="36" r="10" fill="#e8ecf4" stroke="none"/>
+        <circle cx="850" cy="42" r="8" fill="#e8ecf4" stroke="none"/>
+        <!-- tiny rod -->
+        <ellipse cx="890" cy="35" rx="22" ry="8" transform="rotate(-5 890 35)" fill="#e8ecf4" stroke="none"/>
+      </g>
+    </svg>')
   ),
 
   # ── Step navigation ──
@@ -1732,6 +1771,15 @@ server <- function(input, output, session) {
       rv$fnFs <- session_data$fnFs
       rv$fnRs <- session_data$fnRs
       rv$sample_names <- session_data$sample_names
+
+      # Update quality profile sample count max
+      if (!is.null(session_data$fnFs)) {
+        n_samples <- length(session_data$fnFs)
+        updateNumericInput(session, "qp_n_samples", max = n_samples,
+                           value = min(2, n_samples))
+        updateNumericInput(session, "qp_filt_n_samples", max = n_samples,
+                           value = min(2, n_samples))
+      }
       rv$all_files <- session_data$all_files
       rv$filtFs <- session_data$filtFs
       rv$filtRs <- session_data$filtRs
@@ -2078,6 +2126,13 @@ server <- function(input, output, session) {
       paste(parts[idx], collapse = delim)
     })
     rv$sample_names <- sample_names
+
+    # Update quality profile sample count max to total number of samples
+    n_samples <- length(fnFs)
+    updateNumericInput(session, "qp_n_samples", max = n_samples,
+                       value = min(2, n_samples))
+    updateNumericInput(session, "qp_filt_n_samples", max = n_samples,
+                       value = min(2, n_samples))
 
     add_log(1, paste("Extracted", length(sample_names), "sample names using elements",
                      elem_from, "to", elem_to, "(delimiter: '", delim, "')."), "success")
