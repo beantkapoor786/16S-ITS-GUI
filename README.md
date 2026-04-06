@@ -2,7 +2,7 @@
 
 **Interactive R/Shiny applications for 16S rRNA and ITS amplicon sequence analysis**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE.md)
 [![R](https://img.shields.io/badge/R-%3E%3D4.0-blue.svg)](https://www.r-project.org/)
 [![Shiny](https://img.shields.io/badge/Shiny-1.8%2B-blue.svg)](https://shiny.posit.co/)
 
