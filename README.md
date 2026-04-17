@@ -315,4 +315,4 @@ This project is licensed under the MIT License — see the [LICENSE](./LICENSE.m
 
 ## Acknowledgments
 
-shinyDADA2 builds on the outstanding work of the R/Bioconductor microbiome analysis ecosystem, including DADA2, phyloseq, vegan, ANCOM-BC2, microbiome, DECIPHER, and the Shiny framework.
+MIDAS builds on the outstanding work of the R/Bioconductor microbiome analysis ecosystem, including DADA2, phyloseq, vegan, ANCOM-BC2, microbiome, DECIPHER, and the Shiny framework.
