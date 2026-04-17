@@ -8,8 +8,8 @@
 
 MIDAS provides complete, code-free graphical interfaces for amplicon sequence analysis using the [DADA2](https://benjjneb.github.io/dada2/) pipeline. Two separate applications cover the most widely used marker genes in microbial ecology:
 
-- **16S rRNA app** (`dada2-16s-gui.R`) — for bacterial and archaeal community profiling (10-step workflow)
-- **ITS app** (`dada2-ITS-gui.R`) — for fungal community profiling (11-step workflow)
+- **16S rRNA app** (`MIDAS_16S.R`) — for bacterial and archaeal community profiling (10-step workflow)
+- **ITS app** (`MIDAS_ITS.R`) — for fungal community profiling (11-step workflow)
 
 Both applications take raw paired-end Illumina FASTQ files as input and produce publication-ready figures, statistical test results, and downloadable data tables — all without writing a single line of code.
 
@@ -39,13 +39,13 @@ cd MIDAS
 2. Launch the 16S app:
 
 ```r
-shiny::runApp("dada2-16s-gui.R")
+shiny::runApp("MIDAS_16S.R")
 ```
 
 Or launch the ITS app:
 
 ```r
-shiny::runApp("dada2-ITS-gui.R")
+shiny::runApp("MIDAS_ITS.R")
 ```
 
 3. On first launch, all required R packages will be installed automatically. This may take several minutes.
