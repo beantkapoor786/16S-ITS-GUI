@@ -99,7 +99,7 @@ All pipeline state is saved automatically to your data directory after each step
 
 | Export | Format | Available At |
 |--------|--------|-------------|
-| ASV table | CSV | Phyloseq step |
+| ASV table | CSV | Taxonomy step |
 | Taxonomy table | CSV | Taxonomy step |
 | Read tracking table | CSV | Merge step |
 | Full R workspace | .RData | Phyloseq step |
@@ -110,8 +110,6 @@ All pipeline state is saved automatically to your data directory after each step
 | Pairwise PERMANOVA | CSV | PERMANOVA step |
 | ANCOM-BC2 global test | CSV | ANCOM-BC2 step |
 | ANCOM-BC2 pairwise | CSV | ANCOM-BC2 step |
-| Volcano plot | PNG (300 DPI) | ANCOM-BC2 step |
-| DA heatmap | PNG (300 DPI) | ANCOM-BC2 step |
 
 ---
 
@@ -137,7 +135,7 @@ All pipeline state is saved automatically to your data directory after each step
   - PCoA ordination with variance-explained axes
   - Taxonomic abundance bar plots (top N taxa at any rank)
 - **PERMANOVA** — free-text formula input, betadisper homogeneity test, pairwise comparisons with Bonferroni correction, command preview, CSV downloads
-- **ANCOM-BC2** — differential abundance analysis with fixed/random effects formulas, collapsible advanced settings panel (all parameters), global test, pairwise directional test, volcano plot, heatmap, async execution, CSV/PNG downloads
+- **ANCOM-BC2** — differential abundance analysis with fixed/random effects formulas, collapsible advanced settings panel (all parameters), global test, pairwise directional test, async execution, CSV downloads
 - **Publication-ready figure export** at 300 DPI (PNG)
 - **Dark-themed modern interface** (Outfit + JetBrains Mono fonts)
 
