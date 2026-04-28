@@ -1,4 +1,4 @@
-# MIDAS 
+# RAPID 
 
 **Interactive R/Shiny applications for 16S rRNA and ITS amplicon sequence analysis**
 
@@ -6,10 +6,10 @@
 [![R](https://img.shields.io/badge/R-%3E%3D4.0-blue.svg)](https://www.r-project.org/)
 [![Shiny](https://img.shields.io/badge/Shiny-1.8%2B-blue.svg)](https://shiny.posit.co/)
 
-MIDAS provides complete, code-free graphical interfaces for amplicon sequence analysis using the [DADA2](https://benjjneb.github.io/dada2/) pipeline. Two separate applications cover the most widely used marker genes in microbial ecology:
+RAPID provides complete, code-free graphical interfaces for amplicon sequence analysis using the [DADA2](https://benjjneb.github.io/dada2/) pipeline. Two separate applications cover the most widely used marker genes in microbial ecology:
 
-- **16S rRNA app** (`MIDAS_16S.R`) — for bacterial and archaeal community profiling (10-step workflow)
-- **ITS app** (`MIDAS_ITS.R`) — for fungal community profiling (11-step workflow)
+- **16S rRNA app** (`RAPID_16S.R`) — for bacterial and archaeal community profiling (10-step workflow)
+- **ITS app** (`RAPID_ITS.R`) — for fungal community profiling (11-step workflow)
 
 Both applications take raw paired-end Illumina FASTQ files as input and produce publication-ready figures, statistical test results, and downloadable data tables — all without writing a single line of code.
 
@@ -32,25 +32,25 @@ Please see below for more screenshots.
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/beantkapoor786/MIDAS.git
-cd MIDAS 
+git clone https://github.com/beantkapoor786/RAPID.git
+cd RAPID 
 ```
 
 2. Launch the 16S app:
 
 ```r
-shiny::runApp("MIDAS_16S.R")
+shiny::runApp("RAPID_16S.R")
 ```
 
-If you recieve an error related to file opening, please double check that `MIDAS_16S.R` exists in your current working directory in R/Rstudio.
+If you recieve an error related to file opening, please double check that `RAPID_16S.R` exists in your current working directory in R/Rstudio.
 
 Or launch the ITS app:
 
 ```r
-shiny::runApp("MIDAS_ITS.R")
+shiny::runApp("RAPID_ITS.R")
 ```
 
-If you receive an error related to file opening, please double check that `MIDAS_ITS.R` exists in your current working directory in R/Rstudio.
+If you receive an error related to file opening, please double check that `RAPID_ITS.R` exists in your current working directory in R/Rstudio.
 
 
 3. On first launch, all required R packages will be installed automatically. This may take several minutes.
@@ -284,9 +284,9 @@ Both apps share a common architecture:
 
 ## Citation
 
-If you use MIDAS in your research, please cite:
+If you use RAPID in your research, please cite:
 
-> [Authors]. MIDAS: an interactive R/Shiny platform for end-to-end 16S rRNA and ITS amplicon sequence analysis using DADA2 [Journal], [Year]. DOI: [DOI]
+> [Authors]. RAPID: an interactive R/Shiny platform for end-to-end 16S rRNA and ITS amplicon sequence analysis using DADA2 [Journal], [Year]. DOI: [DOI]
 
 Please also cite the underlying tools:
 
@@ -318,4 +318,4 @@ This project is licensed under the MIT License — see the [LICENSE](./LICENSE.m
 
 ## Acknowledgments
 
-MIDAS builds on the outstanding work of the R/Bioconductor microbiome analysis ecosystem, including DADA2, phyloseq, vegan, ANCOM-BC2, microbiome, DECIPHER, and the Shiny framework.
+RAPID builds on the outstanding work of the R/Bioconductor microbiome analysis ecosystem, including DADA2, phyloseq, vegan, ANCOM-BC2, microbiome, DECIPHER, and the Shiny framework.
