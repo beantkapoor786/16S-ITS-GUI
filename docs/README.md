@@ -8,10 +8,10 @@
 
 RAPID provides complete, code-free graphical interfaces for amplicon sequence analysis using the [DADA2](https://benjjneb.github.io/dada2/) pipeline. Two separate applications cover the most widely used marker genes in microbial ecology:
 
-- **16S rRNA app** (`RAPID_16S.R`) — for bacterial and archaeal community profiling (10-step workflow)
-- **ITS app** (`RAPID_ITS.R`) — for fungal community profiling (11-step workflow)
+- **16S rRNA app** (`RAPID_16S.R`) - for bacterial and archaeal community profiling (10-step workflow)
+- **ITS app** (`RAPID_ITS.R`) - for fungal community profiling (11-step workflow)
 
-Both applications take raw paired-end Illumina FASTQ files as input and produce publication-ready figures, statistical test results, and downloadable data tables — all without writing a single line of code.
+Both applications take raw paired-end Illumina FASTQ files as input and produce publication-ready figures, statistical test results, and downloadable data tables - all without writing a single line of code.
 
 ![App start up window](../images/16S/00_start_up_new_analysis_or_resume.png)
 
@@ -23,9 +23,9 @@ Please see below for more screenshots.
 
 ### Prerequisites
 
-- **R** (version 4.0 or higher) — [Download R](https://cran.r-project.org/)
-- **RStudio** (recommended) — [Download RStudio](https://posit.co/download/rstudio-desktop/)
-- **cutadapt** (ITS app only) — installed automatically via pip, or [install manually](https://cutadapt.readthedocs.io/en/stable/installation.html)
+- **R** (version 4.0 or higher) - [Download R](https://cran.r-project.org/)
+- **RStudio** (recommended) - [Download RStudio](https://posit.co/download/rstudio-desktop/)
+- **cutadapt** (ITS app only) - installed automatically via pip, or [install manually](https://cutadapt.readthedocs.io/en/stable/installation.html)
 
 ### Quick Start
 
@@ -33,7 +33,6 @@ Please see below for more screenshots.
 
 ```bash
 git clone https://github.com/beantkapoor786/RAPID.git
-cd RAPID 
 ```
 
 2. Launch the 16S app (Rstudio):
@@ -123,8 +122,8 @@ All pipeline state is saved automatically to your data directory after each step
 ### Shared Features (Both Apps)
 
 - **Guided step-by-step workflow** with real-time progress monitoring
-- **Asynchronous processing** — computationally intensive steps run in background subprocesses, keeping the interface responsive
-- **Session persistence** — automatically saves progress; resume analyses across sessions
+- **Asynchronous processing** - computationally intensive steps run in background subprocesses, keeping the interface responsive
+- **Session persistence** - automatically saves progress; resume analyses across sessions
 - **Auto-detection** of forward/reverse read file patterns
 - **Configurable sample name extraction** with live preview
 - **Interactive quality profile visualization** with downloadable plots
@@ -132,15 +131,15 @@ All pipeline state is saved automatically to your data directory after each step
 - **Background error learning, dereplication, and chimera removal**
 - **Read tracking table and plot** showing retention at each pipeline step
 - **Phyloseq integration** with metadata upload (CSV/TSV) and variable type selection
-- **Data transformation** — rarefaction (configurable depth), relative abundance, or CLR (Centered Log-Ratio)
+- **Data transformation** - rarefaction (configurable depth), relative abundance, or CLR (Centered Log-Ratio)
 - **Interactive visualizations:**
   - Rarefaction curves (colored by group)
   - Alpha diversity boxplots (Observed, Shannon, Simpson)
   - NMDS ordination with 95% confidence ellipses
   - PCoA ordination with variance-explained axes
   - Taxonomic abundance bar plots (top N taxa at any rank)
-- **PERMANOVA** — free-text formula input, betadisper homogeneity test, pairwise comparisons with Bonferroni correction, command preview, CSV downloads
-- **ANCOM-BC2** — differential abundance analysis with fixed/random effects formulas, collapsible advanced settings panel (all parameters), global test, pairwise directional test, async execution, CSV downloads
+- **PERMANOVA** - free-text formula input, betadisper homogeneity test, pairwise comparisons with Bonferroni correction, command preview, CSV downloads
+- **ANCOM-BC2** - differential abundance analysis with fixed/random effects formulas, collapsible advanced settings panel (all parameters), global test, pairwise directional test, async execution, CSV downloads
 - **Publication-ready figure export** at 300 DPI (PNG)
 - **Dark-themed modern interface** (Outfit + JetBrains Mono fonts)
 
@@ -246,10 +245,10 @@ All pipeline state is saved automatically to your data directory after each step
 
 Both apps share a common architecture:
 
-- **Asynchronous computation** via `callr::r_bg()` background subprocesses — resolves the incompatibility between DADA2's fork-based multiprocessing and Shiny's reactive framework
-- **JavaScript-driven instant progress indicators** — animated progress bars appear immediately on button click, before Shiny's reactive flush
-- **Reactive session persistence** — auto-saves `.RData` to the data directory after each step
-- **Dynamic UI** — metadata variable types, primer inputs, and quality plot sample counts adapt to the data
+- **Asynchronous computation** via `callr::r_bg()` background subprocesses - resolves the incompatibility between DADA2's fork-based multiprocessing and Shiny's reactive framework
+- **JavaScript-driven instant progress indicators** - animated progress bars appear immediately on button click, before Shiny's reactive flush
+- **Reactive session persistence** - auto-saves `.RData` to the data directory after each step
+- **Dynamic UI** - metadata variable types, primer inputs, and quality plot sample counts adapt to the data
 
 ---
 
@@ -279,7 +278,7 @@ Both apps share a common architecture:
 - The app handles CSVs with quoted rows (common Excel export issue) automatically
 
 **ANCOM-BC2 / PERMANOVA errors about missing variables**
-- Both tools validate formula variables before running — check the error notification for the exact variable name and available metadata columns
+- Both tools validate formula variables before running - check the error notification for the exact variable name and available metadata columns
 
 **Taxonomy step hangs**
 - 16S: SILVA database download may take time on first use
@@ -319,7 +318,7 @@ Contributions are welcome! Please open an issue or submit a pull request.
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE](./LICENSE.md) file for details.
+This project is licensed under the MIT License - see the [LICENSE](./LICENSE.md) file for details.
 
 ---
 

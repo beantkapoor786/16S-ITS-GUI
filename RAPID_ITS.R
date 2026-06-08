@@ -3570,7 +3570,14 @@ server <- function(input, output, session) {
     rare_list <- lapply(seq_len(nrow(otu)), function(i) {
       sample_counts <- otu[i, ]
       total <- sum(sample_counts)
-      richness <- sapply(steps[steps <= total], function(d) {
+      d_steps <- steps[steps <= total]
+      if (length(d_steps) == 0) {
+        add_log(8, paste0("Skipping sample '", rownames(otu)[i],
+                          "' in rarefaction curve (", total,
+                          " total reads, below the minimum depth of 1 step)."), "warn")
+        return(NULL)
+      }
+      richness <- sapply(d_steps, function(d) {
         # Use rarefaction formula: S_rare = S - sum(choose(N-Ni, d) / choose(N, d))
         # Approximate with vegan::rarefy if available, else simple subsampling estimate
         sum(1 - exp(lchoose(total - sample_counts[sample_counts > 0], d) -
@@ -3578,7 +3585,7 @@ server <- function(input, output, session) {
       })
       data.frame(
         Sample = rownames(otu)[i],
-        Depth = steps[steps <= total],
+        Depth = d_steps,
         Richness = richness,
         stringsAsFactors = FALSE
       )
