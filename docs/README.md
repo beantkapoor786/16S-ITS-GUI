@@ -50,6 +50,12 @@ shiny::runApp("RAPID_ITS.R")
 
 If you receive an error related to file opening, please double check that `RAPID_16S.R` and/or `RAPID_ITS.R` exists in your current working directory in R/Rstudio. On first launch, all required R packages will be installed automatically. This may take several minutes.
 
+### Pro tips
+
+1. When you first launch the app, it opens in RStudio, just click **"Open in Browser"** to use it there. The analyses are identical either way, but the browser has one handy perk: it remembers the path you entered, so you won't have to re-enter it every time you resume a session.
+2. Please remove any index files, control files, blank or undeterminded files before running this pipeline.
+3. I would make sure the number of samples in the folder match the number of samples in the metadata file. This helps avoid file handling errors.
+
 ### Test datasets
 
 Please look at the instructions here to download and analyze [soil 16S test datasets](test_datasets.md)
