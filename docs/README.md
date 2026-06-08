@@ -29,7 +29,7 @@ Please see below for more screenshots.
 
 ### Quick Start
 
-1. Clone the repository (Terminal on Mac; Powershell on Windows):
+1. Clone the repository (Terminal on Mac; Powershell on Windows). Ideally, I would clone it into the directory where you are running your R project.
 
 ```bash
 git clone https://github.com/beantkapoor786/RAPID.git
