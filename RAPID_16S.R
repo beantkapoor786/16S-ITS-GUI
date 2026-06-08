@@ -6,7 +6,7 @@
 # ── Package Management ───────────────────────────────────────────────────────
 
 required_cran <- c("shiny", "ggplot2", "tidyverse", "shinyjs",
-                   "DT", "shinycssloaders", "callr", "vegan")
+                   "DT", "shinycssloaders", "callr", "vegan", "shinyFiles")
 required_bioc <- c("dada2", "phyloseq", "Biostrings", "DECIPHER", "microbiome", "ANCOMBC")
 
 install_if_missing <- function() {
@@ -38,6 +38,7 @@ library(phyloseq)
 library(Biostrings)
 library(DECIPHER)
 library(callr)
+library(shinyFiles)
 library(vegan)
 library(microbiome)
 library(ANCOMBC)
@@ -935,13 +936,20 @@ ui <- fluidPage(
           "Sequence Data Directory"
         ),
         div(class = "card-description",
-          "Provide the full path to the directory containing your demultiplexed, paired-end FASTQ files."
+          "Browse to the directory containing your demultiplexed, paired-end FASTQ files."
         ),
         div(class = "grid-2",
           div(
-            textInput("data_path", "Path to FASTQ Directory", placeholder = "/path/to/your/fastq/files"),
-            actionButton("btn_scan_files", "Scan Directory", class = "btn-primary",
-                         icon = icon("magnifying-glass"))
+            shinyDirButton("dir_picker", "Browse for FASTQ Directory",
+                           title = "Select your FASTQ directory",
+                           icon = icon("folder-open"),
+                           class = "btn-primary",
+                           style = "width: 100%;"),
+            uiOutput("selected_dir_display"),
+            div(style = "margin-top: 10px;",
+              actionButton("btn_scan_files", "Scan Directory", class = "btn-primary",
+                           icon = icon("magnifying-glass"))
+            )
           ),
           div(
             textInput("fwd_pattern", "Forward Read Pattern", value = ""),
@@ -1627,6 +1635,30 @@ ui <- fluidPage(
 # SERVER
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Promotes download.file warnings to errors (some platforms only warn on HTTP
+# failures, leaving a corrupt/HTML file on disk) and validates the result size.
+safe_download <- function(url, destfile, min_bytes = 1e6) {
+  withCallingHandlers(
+    tryCatch(
+      download.file(url, destfile, mode = "wb", quiet = TRUE),
+      error = function(e) {
+        if (file.exists(destfile)) file.remove(destfile)
+        stop(e$message)
+      }
+    ),
+    warning = function(w) {
+      if (file.exists(destfile)) file.remove(destfile)
+      stop(conditionMessage(w))
+    }
+  )
+  sz <- file.info(destfile)$size
+  if (is.na(sz) || sz < min_bytes) {
+    if (file.exists(destfile)) file.remove(destfile)
+    stop(paste0("Downloaded file appears corrupt (", sz, " bytes). Check internet connection and try again."))
+  }
+  invisible(destfile)
+}
+
 server <- function(input, output, session) {
 
   # ── Reactive values ──────────────────────────────────────────────────────
@@ -1635,6 +1667,7 @@ server <- function(input, output, session) {
     completed_steps = c(),
     startup_done = NULL,
     # File data
+    data_path = NULL,
     fnFs = NULL, fnRs = NULL, sample_names = NULL,
     all_files = NULL,
     # Quality plots
@@ -1672,6 +1705,30 @@ server <- function(input, output, session) {
     prog6 = list(pct = 0, label = "", status = "idle"),
     prog10 = list(pct = 0, label = "", status = "idle")
   )
+
+  # ── Directory picker (shinyFiles) ──────────────────────────────────────
+  shinyDirChoose(input, "dir_picker", roots = c(Home = path.expand("~"), Root = "/"),
+                 filetypes = c(""))
+
+  observeEvent(input$dir_picker, {
+    req(is.list(input$dir_picker))
+    path <- parseDirPath(roots = c(Home = path.expand("~"), Root = "/"), input$dir_picker)
+    if (length(path) > 0 && nzchar(path)) {
+      rv$data_path <- as.character(path)
+    }
+  })
+
+  output$selected_dir_display <- renderUI({
+    if (is.null(rv$data_path)) {
+      div(style = "margin-top: 8px; font-size: 12px; color: var(--text-muted);",
+        "No directory selected")
+    } else {
+      div(style = "margin-top: 8px; font-size: 12px; color: var(--accent-emerald);",
+        icon("check-circle"),
+        span(style = "margin-left: 4px; word-break: break-all;", rv$data_path)
+      )
+    }
+  })
 
   # ── Helper: update step progress ──
   set_progress <- function(step, pct, label, status = "running") {
@@ -1733,7 +1790,7 @@ server <- function(input, output, session) {
   SESSION_FILENAME <- "dada2_session.RData"
 
   get_session_path <- function() {
-    path <- trimws(isolate(input$data_path))
+    path <- trimws(isolate(rv$data_path))
     if (nzchar(path) && dir.exists(path)) {
       return(file.path(path, SESSION_FILENAME))
     }
@@ -1747,7 +1804,7 @@ server <- function(input, output, session) {
     tryCatch({
       # Collect all saveable state (exclude background process handles)
       session_data <- list(
-        data_path = isolate(input$data_path),
+        data_path = isolate(rv$data_path),
         completed_steps = rv$completed_steps,
         current_step = rv$current_step,
         fnFs = rv$fnFs, fnRs = rv$fnRs,
@@ -1838,7 +1895,7 @@ server <- function(input, output, session) {
       rv$log10 <- if (!is.null(session_data$log10)) session_data$log10 else ""
 
       # Restore UI inputs
-      updateTextInput(session, "data_path", value = session_data$data_path)
+      rv$data_path <- session_data$data_path
       if (!is.null(session_data$fwd_pattern))
         updateTextInput(session, "fwd_pattern", value = session_data$fwd_pattern)
       if (!is.null(session_data$rev_pattern))
@@ -2068,8 +2125,8 @@ server <- function(input, output, session) {
   # ═══════════════════════════════════════════════════════════════════════
 
   observeEvent(input$btn_scan_files, {
-    req(input$data_path)
-    path <- trimws(input$data_path)
+    req(rv$data_path)
+    path <- trimws(rv$data_path)
     add_log(1, paste("Scanning directory:", path))
 
     if (!dir.exists(path)) {
@@ -2124,7 +2181,7 @@ server <- function(input, output, session) {
   })
 
   observeEvent(input$btn_extract_samples, {
-    path <- trimws(input$data_path)
+    path <- trimws(rv$data_path)
     req(path, input$fwd_pattern, input$rev_pattern)
 
     fwd_pat <- gsub("\\.", "\\\\.", input$fwd_pattern)
@@ -2272,7 +2329,7 @@ server <- function(input, output, session) {
 
   observeEvent(input$btn_filter, {
     req(rv$fnFs, rv$fnRs, rv$sample_names)
-    path <- trimws(input$data_path)
+    path <- trimws(rv$data_path)
     add_log(3, "Starting filter & trim...")
 
     filtFs <- file.path(path, "filtered", paste0(rv$sample_names, "_F_filt.fastq.gz"))
@@ -2766,21 +2823,37 @@ server <- function(input, output, session) {
       genus_file <- file.path(db_dir, basename(SILVA_GENUS_URL))
       species_file <- file.path(db_dir, basename(SILVA_SPECIES_URL))
 
-      # Download if needed (synchronous, usually fast if cached)
-      if (!file.exists(genus_file)) {
+      # Download if missing or corrupt (< 1 MB is a sign of a failed/partial download)
+      genus_ok <- file.exists(genus_file) &&
+                  isTRUE(!is.na(file.info(genus_file)$size) && file.info(genus_file)$size >= 1e6)
+      if (!genus_ok) {
+        if (file.exists(genus_file)) {
+          add_log(6, "SILVA genus file appears corrupt - re-downloading.", "warn")
+          file.remove(genus_file)
+        }
         set_progress(6, 5, "Downloading SILVA genus database...", "running")
         add_log(6, "Downloading SILVA genus training set...")
-        download.file(SILVA_GENUS_URL, genus_file, mode = "wb", quiet = TRUE)
+        safe_download(SILVA_GENUS_URL, genus_file)
         add_log(6, "SILVA genus database downloaded.", "success")
       } else {
         add_log(6, "SILVA genus database found locally.", "info")
       }
 
-      if (input$add_species && !file.exists(species_file)) {
-        set_progress(6, 10, "Downloading SILVA species database...", "running")
-        add_log(6, "Downloading SILVA species assignment set...")
-        download.file(SILVA_SPECIES_URL, species_file, mode = "wb", quiet = TRUE)
-        add_log(6, "SILVA species database downloaded.", "success")
+      if (input$add_species) {
+        species_ok <- file.exists(species_file) &&
+                      isTRUE(!is.na(file.info(species_file)$size) && file.info(species_file)$size >= 1e6)
+        if (!species_ok) {
+          if (file.exists(species_file)) {
+            add_log(6, "SILVA species file appears corrupt - re-downloading.", "warn")
+            file.remove(species_file)
+          }
+          set_progress(6, 10, "Downloading SILVA species database...", "running")
+          add_log(6, "Downloading SILVA species assignment set...")
+          safe_download(SILVA_SPECIES_URL, species_file)
+          add_log(6, "SILVA species database downloaded.", "success")
+        } else {
+          add_log(6, "SILVA species database found locally.", "info")
+        }
       }
 
       set_progress(6, 15, "Launching taxonomy assignment (multithreaded)...", "running")
@@ -2791,8 +2864,17 @@ server <- function(input, output, session) {
         rv$bg_tax <- callr::r_bg(
           function(seqtab, genus_file, species_file, add_species, mt) {
             library(dada2)
+            if (!file.exists(genus_file))
+              stop(paste("Genus database not found:", genus_file))
+            seqs <- dada2::getSequences(seqtab)
+            if (length(seqs) == 0)
+              stop("Sequence table contains no ASVs - cannot assign taxonomy.")
             tx <- assignTaxonomy(seqtab, genus_file, multithread = mt)
-            if (add_species) tx <- addSpecies(tx, species_file)
+            if (add_species && nrow(tx) > 0) {
+              if (!file.exists(species_file))
+                stop(paste("Species database not found:", species_file))
+              tx <- addSpecies(tx, species_file)
+            }
             tx
           },
           args = list(
@@ -2831,8 +2913,17 @@ server <- function(input, output, session) {
           rv$bg_tax <- callr::r_bg(
             function(seqtab, genus_file, species_file, add_species, mt) {
               library(dada2)
+              if (!file.exists(genus_file))
+                stop(paste("Genus database not found:", genus_file))
+              seqs <- dada2::getSequences(seqtab)
+              if (length(seqs) == 0)
+                stop("Sequence table contains no ASVs - cannot assign taxonomy.")
               tx <- assignTaxonomy(seqtab, genus_file, multithread = mt)
-              if (add_species) tx <- addSpecies(tx, species_file)
+              if (add_species && nrow(tx) > 0) {
+                if (!file.exists(species_file))
+                  stop(paste("Species database not found:", species_file))
+                tx <- addSpecies(tx, species_file)
+              }
               tx
             },
             args = list(
