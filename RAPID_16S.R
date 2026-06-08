@@ -6,7 +6,7 @@
 # ── Package Management ───────────────────────────────────────────────────────
 
 required_cran <- c("shiny", "ggplot2", "tidyverse", "shinyjs",
-                   "DT", "shinycssloaders", "callr", "vegan", "shinyFiles")
+                   "DT", "shinycssloaders", "callr", "vegan")
 required_bioc <- c("dada2", "phyloseq", "Biostrings", "DECIPHER", "microbiome", "ANCOMBC")
 
 install_if_missing <- function() {
@@ -38,7 +38,6 @@ library(phyloseq)
 library(Biostrings)
 library(DECIPHER)
 library(callr)
-library(shinyFiles)
 library(vegan)
 library(microbiome)
 library(ANCOMBC)
@@ -54,10 +53,10 @@ library(ANCOMBC)
 # with multithread=FALSE.
 can_multithread <- .Platform$OS.type != "windows"
 
-# ── SILVA database URLs (v138.1) ──────────────────────────────────────────
+# ── SILVA database URLs (v138.2) ──────────────────────────────────────────
 
-SILVA_GENUS_URL <- "https://zenodo.org/records/4587955/files/silva_nr99_v138.1_train_set.fa.gz"
-SILVA_SPECIES_URL <- "https://zenodo.org/records/4587955/files/silva_species_assignment_v138.1.fa.gz"
+SILVA_GENUS_URL <- "https://www.arb-silva.de/fileadmin/silva_databases/current/DADA2/1.36.0/SSU/silva_nr99_v138.2_toGenus_trainset.fa.gz"
+SILVA_SPECIES_URL <- "https://www.arb-silva.de/fileadmin/silva_databases/current/DADA2/1.36.0/SSU/silva_v138.2_assignSpecies.fa.gz"
 
 # ── Common forward/reverse patterns ─────────────────────────────────────────
 
@@ -936,16 +935,12 @@ ui <- fluidPage(
           "Sequence Data Directory"
         ),
         div(class = "card-description",
-          "Browse to the directory containing your demultiplexed, paired-end FASTQ files."
+          "Paste the full path to the directory containing your demultiplexed, paired-end FASTQ files."
         ),
         div(class = "grid-2",
           div(
-            shinyDirButton("dir_picker", "Browse for FASTQ Directory",
-                           title = "Select your FASTQ directory",
-                           icon = icon("folder-open"),
-                           class = "btn-primary",
-                           style = "width: 100%;"),
-            uiOutput("selected_dir_display"),
+            textInput("raw_dir_path", "FASTQ Directory Path", value = "",
+                      placeholder = "/path/to/your/fastq/files"),
             div(style = "margin-top: 10px;",
               actionButton("btn_scan_files", "Scan Directory", class = "btn-primary",
                            icon = icon("magnifying-glass"))
@@ -1706,30 +1701,6 @@ server <- function(input, output, session) {
     prog10 = list(pct = 0, label = "", status = "idle")
   )
 
-  # ── Directory picker (shinyFiles) ──────────────────────────────────────
-  shinyDirChoose(input, "dir_picker", roots = c(Home = path.expand("~"), Root = "/"),
-                 filetypes = c(""))
-
-  observeEvent(input$dir_picker, {
-    req(is.list(input$dir_picker))
-    path <- parseDirPath(roots = c(Home = path.expand("~"), Root = "/"), input$dir_picker)
-    if (length(path) > 0 && nzchar(path)) {
-      rv$data_path <- as.character(path)
-    }
-  })
-
-  output$selected_dir_display <- renderUI({
-    if (is.null(rv$data_path)) {
-      div(style = "margin-top: 8px; font-size: 12px; color: var(--text-muted);",
-        "No directory selected")
-    } else {
-      div(style = "margin-top: 8px; font-size: 12px; color: var(--accent-emerald);",
-        icon("check-circle"),
-        span(style = "margin-left: 4px; word-break: break-all;", rv$data_path)
-      )
-    }
-  })
-
   # ── Helper: update step progress ──
   set_progress <- function(step, pct, label, status = "running") {
     rv[[paste0("prog", step)]] <- list(pct = pct, label = label, status = status)
@@ -2125,8 +2096,9 @@ server <- function(input, output, session) {
   # ═══════════════════════════════════════════════════════════════════════
 
   observeEvent(input$btn_scan_files, {
-    req(rv$data_path)
-    path <- trimws(rv$data_path)
+    req(nzchar(trimws(input$raw_dir_path)))
+    rv$data_path <- trimws(input$raw_dir_path)
+    path <- rv$data_path
     add_log(1, paste("Scanning directory:", path))
 
     if (!dir.exists(path)) {
@@ -3198,7 +3170,14 @@ server <- function(input, output, session) {
     rare_list <- lapply(seq_len(nrow(otu)), function(i) {
       sample_counts <- otu[i, ]
       total <- sum(sample_counts)
-      richness <- sapply(steps[steps <= total], function(d) {
+      d_steps <- steps[steps <= total]
+      if (length(d_steps) == 0) {
+        add_log(7, paste0("Skipping sample '", rownames(otu)[i],
+                          "' in rarefaction curve (", total,
+                          " total reads, below the minimum depth of 1 step)."), "warn")
+        return(NULL)
+      }
+      richness <- sapply(d_steps, function(d) {
         # Use rarefaction formula: S_rare = S - sum(choose(N-Ni, d) / choose(N, d))
         # Approximate with vegan::rarefy if available, else simple subsampling estimate
         sum(1 - exp(lchoose(total - sample_counts[sample_counts > 0], d) -
@@ -3206,7 +3185,7 @@ server <- function(input, output, session) {
       })
       data.frame(
         Sample = rownames(otu)[i],
-        Depth = steps[steps <= total],
+        Depth = d_steps,
         Richness = richness,
         stringsAsFactors = FALSE
       )
