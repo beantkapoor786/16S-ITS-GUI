@@ -4,7 +4,7 @@ Two datasets are provided below. A quick test dataset for first-time users, and 
 
 ---
 
-## Option 1 — Quick Test Dataset (Recommended for First-Time Users)
+## Option 1 - Quick Test Dataset (Recommended for First-Time Users)
 
 **DADA2 MiSeq SOP Dataset** — Mouse gut, 16S V4 region, 20 samples, 2×250 bp Illumina MiSeq  
 This is the official test dataset from the DADA2 authors, widely used in tutorials and benchmarking. It is small (~40 MB), well-characterized, and runs through the full RAPID-16S pipeline in minutes.
