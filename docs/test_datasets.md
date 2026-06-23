@@ -41,9 +41,9 @@ Point RAPID-16S to the `MiSeq_SOP/` folder after unzipping.
 
 ---
 
-## Option 2 — Real Soil Dataset
+## Option 2 - Real Soil Dataset
 
-**Differently Managed Soils — Comparative primer study** — Soil, 16S V4 region, 515F-806R, Illumina MiSeq 2×150 bp  
+**Differently Managed Soils - Comparative primer study** - Soil, 16S V4 region, 515F-806R, Illumina MiSeq 2×150 bp  
 Agricultural soils collected from differently managed fields. Data was originally generated to compare primer pairs for prokaryotic and archaeal nitrifier detection in soils, processed with DADA2 via QIIME 2.
 
 - **Primers:** 515F / 806R (V4 region)
@@ -55,13 +55,13 @@ Agricultural soils collected from differently managed fields. Data was originall
 
 ### Download Options
 
-**Option A — ENA browser (easiest, no terminal needed)**
+**Option A - ENA browser (easiest, no terminal needed)**
 
 Go to [https://www.ebi.ac.uk/ena/browser/view/PRJNA831877](https://www.ebi.ac.uk/ena/browser/view/PRJNA831877), click **Show Column Selection**, enable **FASTQ files (FTP)**, then click the download links.
 
 ---
 
-**Option B — wget**
+**Option B - wget**
 
 ```bash
 # Step 1: Download the file report from ENA
@@ -73,7 +73,7 @@ cut -f2 filereport.tsv | tail -n +2 | tr ';' '\n' | sed 's|^|ftp://|' | wget -i 
 
 ---
 
-**Option C — curl**
+**Option C - curl**
 
 ```bash
 # Step 1: Download the file report
@@ -87,7 +87,7 @@ done
 
 ---
 
-**Option D — SRA Toolkit (NCBI)**
+**Option D - SRA Toolkit (NCBI)**
 
 ```bash
 # Install SRA Toolkit: https://github.com/ncbi/sra-tools/wiki/02.-Installing-SRA-Toolkit
@@ -103,7 +103,7 @@ fasterq-dump --split-files SRR*
 
 ---
 
-**Option E — ffq (Python, recommended for scripted workflows)**
+**Option E - ffq (Python, recommended for scripted workflows)**
 
 ```bash
 # Install: pip install ffq
@@ -112,7 +112,7 @@ ffq --ftp PRJNA831877 | jq -r '.[] | .url' | xargs -n 1 wget
 
 ---
 
-**Option F — Aspera (fastest for large transfers)**
+**Option F - Aspera (fastest for large transfers)**
 
 ```bash
 # Install IBM Aspera Connect: https://www.ibm.com/aspera/connect/
@@ -134,4 +134,4 @@ done
 | truncLen (R) | 140 |
 | Taxonomy database | SILVA v138.1 |
 
-> **Note:** Because this dataset uses 2×150 bp reads (shorter than 2×250 bp), set `truncLen` conservatively — inspect the quality profiles in Step 2 before proceeding.
+> **Note:** Because this dataset uses 2×150 bp reads (shorter than 2×250 bp), set `truncLen` conservatively - inspect the quality profiles in Step 2 before proceeding.
