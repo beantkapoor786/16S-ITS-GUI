@@ -1180,6 +1180,9 @@ ui <- fluidPage(
           "Read Tracking Through Pipeline"
         ),
         DTOutput("track_table") %>% withSpinner(type = 6, color = "#3b82f6"),
+        div(style = "margin-top: 12px;",
+          checkboxInput("track_hide_legend", "Hide sample legend", value = FALSE)
+        ),
         plotOutput("track_plot", height = "400px") %>% withSpinner(type = 6, color = "#3b82f6"),
         div(style = "margin-top: 16px; display: flex; gap: 12px;",
           downloadButton("dl_track_step5", "Download Tracking Table (CSV)", class = "btn-download"),
@@ -2137,6 +2140,19 @@ server <- function(input, output, session) {
       # Load files with detected patterns
       fnFs <- sort(list.files(path, pattern = gsub("\\.", "\\\\.", detected_fwd), full.names = TRUE))
       fnRs <- sort(list.files(path, pattern = gsub("\\.", "\\\\.", detected_rev), full.names = TRUE))
+
+      # Exclude very small (likely empty) files before any processing
+      fwd_sizes <- file.info(fnFs)$size
+      rev_sizes <- file.info(fnRs)$size
+      empty_mask <- is.na(fwd_sizes) | is.na(rev_sizes) |
+                    (fwd_sizes < 1000) | (rev_sizes < 1000)
+      if (any(empty_mask)) {
+        add_log(1, paste0("Warning: ", sum(empty_mask), " sample(s) have very small/empty FASTQ files and will be excluded: ",
+                          paste(basename(fnFs)[empty_mask], collapse = ", ")), "warn")
+        fnFs <- fnFs[!empty_mask]
+        fnRs <- fnRs[!empty_mask]
+      }
+
       rv$fnFs <- fnFs
       rv$fnRs <- fnRs
       add_log(1, paste("Forward files:", length(fnFs), " | Reverse files:", length(fnRs)), "info")
@@ -2169,6 +2185,18 @@ server <- function(input, output, session) {
 
     if (length(fnFs) != length(fnRs)) {
       add_log(1, paste("Warning: Unequal file counts - Fwd:", length(fnFs), "Rev:", length(fnRs)), "warn")
+    }
+
+    # Exclude very small (likely empty) files before any processing
+    fwd_sizes <- file.info(fnFs)$size
+    rev_sizes <- file.info(fnRs)$size
+    empty_mask <- is.na(fwd_sizes) | is.na(rev_sizes) |
+                  (fwd_sizes < 1000) | (rev_sizes < 1000)
+    if (any(empty_mask)) {
+      add_log(1, paste0("Warning: ", sum(empty_mask), " sample(s) have very small/empty FASTQ files and will be excluded: ",
+                        paste(basename(fnFs)[empty_mask], collapse = ", ")), "warn")
+      fnFs <- fnFs[!empty_mask]
+      fnRs <- fnRs[!empty_mask]
     }
 
     rv$fnFs <- fnFs
@@ -2372,7 +2400,7 @@ server <- function(input, output, session) {
 
         total_in <- sum(out[, "reads.in"])
         total_out <- sum(out[, "reads.out"])
-        pct <- round(total_out / total_in * 100, 1)
+        pct <- if (total_in > 0) round(total_out / total_in * 100, 1) else 0
         add_log(3, paste("Filtering complete.", total_out, "/", total_in, "reads passed (", pct, "%)."), "success")
         set_progress(3, 100, "Filter & trim complete", "done")
         rv$completed_steps <- union(rv$completed_steps, 3)
@@ -2638,8 +2666,28 @@ server <- function(input, output, session) {
       add_log(5, "Paired reads merged.", "success")
 
       seqtab <- makeSequenceTable(mergers)
-      rv$seqtab <- seqtab
       add_log(5, paste("Sequence table:", nrow(seqtab), "samples,", ncol(seqtab), "ASVs."), "info")
+
+      # Warn and drop samples with 0 merged reads
+      zero_merged_mask <- rowSums(seqtab) == 0
+      if (any(zero_merged_mask)) {
+        zero_names <- rownames(seqtab)[zero_merged_mask]
+        add_log(5, paste0("Warning: ", sum(zero_merged_mask),
+                          " sample(s) produced 0 merged reads and will be excluded: ",
+                          paste(zero_names, collapse = ", ")), "warn")
+        surviving   <- rownames(seqtab)[!zero_merged_mask]
+        seqtab      <- seqtab[surviving, , drop = FALSE]
+        keep_idx    <- rv$sample_names %in% surviving
+        rv$fnFs     <- rv$fnFs[keep_idx]
+        rv$fnRs     <- rv$fnRs[keep_idx]
+        rv$filtFs   <- rv$filtFs[keep_idx]
+        rv$filtRs   <- rv$filtRs[keep_idx]
+        rv$sample_names <- rv$sample_names[keep_idx]
+        rv$dadaFs   <- rv$dadaFs[surviving]
+        rv$dadaRs   <- rv$dadaRs[surviving]
+        rv$mergers  <- mergers[surviving]
+      }
+      rv$seqtab <- seqtab
 
       # Stage 2: chimera removal (slow, run in background)
       set_progress(5, 40, "Removing chimeras (multithreaded)...", "running")
@@ -2671,15 +2719,37 @@ server <- function(input, output, session) {
     } else {
       tryCatch({
         seqtab_nochim <- rv$bg_merge$get_result()
+
+        # Warn and drop samples whose reads were entirely chimeric
+        zero_nochim_mask <- rowSums(seqtab_nochim) == 0
+        if (any(zero_nochim_mask)) {
+          zero_names <- rownames(seqtab_nochim)[zero_nochim_mask]
+          add_log(5, paste0("Warning: ", sum(zero_nochim_mask),
+                            " sample(s) had all reads removed as chimeras and will be excluded: ",
+                            paste(zero_names, collapse = ", ")), "warn")
+          surviving       <- rownames(seqtab_nochim)[!zero_nochim_mask]
+          seqtab_nochim   <- seqtab_nochim[surviving, , drop = FALSE]
+          keep_idx        <- rv$sample_names %in% surviving
+          rv$fnFs         <- rv$fnFs[keep_idx]
+          rv$fnRs         <- rv$fnRs[keep_idx]
+          rv$filtFs       <- rv$filtFs[keep_idx]
+          rv$filtRs       <- rv$filtRs[keep_idx]
+          rv$sample_names <- rv$sample_names[keep_idx]
+          rv$dadaFs       <- rv$dadaFs[surviving]
+          rv$dadaRs       <- rv$dadaRs[surviving]
+          rv$mergers      <- rv$mergers[surviving]
+        }
         rv$seqtab_nochim <- seqtab_nochim
-        pct <- round(sum(seqtab_nochim) / sum(rv$seqtab) * 100, 1)
+
+        pct <- if (sum(rv$seqtab) > 0) round(sum(seqtab_nochim) / sum(rv$seqtab) * 100, 1) else 0
         add_log(5, paste("Chimera removal complete.", ncol(seqtab_nochim), "ASVs retained.",
                          pct, "% of reads retained."), "success")
 
-        # Build tracking table
+        # Build tracking table — align filter_out to surviving samples via rv$fnFs
         getN <- function(x) sum(getUniques(x))
+        filter_out_aligned <- rv$filter_out[basename(rv$fnFs), , drop = FALSE]
         track <- cbind(
-          rv$filter_out,
+          filter_out_aligned,
           sapply(rv$dadaFs, getN),
           sapply(rv$dadaRs, getN),
           sapply(rv$mergers, getN),
@@ -2751,6 +2821,12 @@ server <- function(input, output, session) {
               rownames = FALSE, class = 'compact')
   })
 
+  # Auto-set hide-legend default when track is first populated
+  observeEvent(rv$track, {
+    n_samples <- nrow(rv$track)
+    updateCheckboxInput(session, "track_hide_legend", value = n_samples > 20)
+  }, once = TRUE)
+
   output$track_plot <- renderPlot({
     req(rv$track)
     df <- as.data.frame(rv$track)
@@ -2759,7 +2835,9 @@ server <- function(input, output, session) {
       pivot_longer(cols = -Sample, names_to = "Step", values_to = "Reads") %>%
       mutate(Step = factor(Step, levels = c("input", "filtered", "denoisedF", "denoisedR", "merged", "nonchim")))
 
-    ggplot(df_long, aes(x = Step, y = Reads, group = Sample, color = Sample)) +
+    hide_legend <- isTRUE(input$track_hide_legend)
+
+    p <- ggplot(df_long, aes(x = Step, y = Reads, group = Sample, color = Sample)) +
       geom_line(alpha = 0.7, linewidth = 0.8) +
       geom_point(size = 2, alpha = 0.8) +
       labs(title = "Read Tracking Through Pipeline", x = "Pipeline Step", y = "Number of Reads") +
@@ -2776,6 +2854,9 @@ server <- function(input, output, session) {
         panel.grid.minor = element_blank(),
         plot.title = element_text(size = 14, face = "bold")
       )
+
+    if (hide_legend) p <- p + guides(color = "none")
+    p
   })
 
   # ═══════════════════════════════════════════════════════════════════════
@@ -3457,6 +3538,7 @@ server <- function(input, output, session) {
         labs(title = "Read Tracking Through Pipeline", x = "Pipeline Step", y = "Number of Reads") +
         theme_minimal(base_size = 14) +
         theme(axis.text.x = element_text(angle = 30, hjust = 1))
+      if (isTRUE(input$track_hide_legend)) p <- p + guides(color = "none")
       ggsave(file, plot = p, width = 10, height = 6)
     }
   )
