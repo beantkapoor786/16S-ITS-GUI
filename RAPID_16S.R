@@ -324,6 +324,10 @@ body {
   letter-spacing: 0.05em !important;
   margin-bottom: 6px !important;
 }
+label.dada-param-label {
+  color: #ffffff !important;
+  font-weight: bold !important;
+}
 
 .checkbox label, .radio label {
   text-transform: none !important;
@@ -1108,6 +1112,44 @@ ui <- fluidPage(
         div(class = "card-description",
           "DADA2 learns error rates from the data and then applies the core sample inference algorithm to dereplicate and denoise sequences."
         ),
+
+        div(class = "grid-2",
+          div(
+            tags$label("OMEGA_A", `for` = "dada_omega_a", class = "dada-param-label"),
+            tags$small(style = "display:block; color:#8899b0; margin-bottom:4px;",
+              "Significance threshold for calling new ASVs. Lower values are more stringent and produce fewer, higher-confidence ASVs."),
+            textInput("dada_omega_a", label = NULL, value = "1e-40",
+                      placeholder = "e.g. 1e-40")
+          ),
+          div(
+            tags$label("Pooling", `for` = "dada_pool", class = "dada-param-label"),
+            tags$small(style = "display:block; color:#8899b0; margin-bottom:4px;",
+              "FALSE (default) processes samples independently and is fastest. TRUE pools all samples to improve sensitivity for rare variants. pseudo balances speed and sensitivity."),
+            selectInput("dada_pool", label = NULL, choices = c("FALSE", "TRUE", "pseudo"),
+                        selected = "FALSE")
+          )
+        ),
+
+        tags$details(
+          tags$summary(style = "cursor:pointer; color:#8899b0; margin-bottom:10px;",
+                       "Advanced denoising options"),
+          div(style = "padding: 8px 0;",
+            div(
+              tags$label("errorEstimationFunction", `for` = "dada_err_fn",
+                         class = "dada-param-label"),
+              selectInput("dada_err_fn", label = NULL,
+                          choices = c("loessErrfun", "noqualErrfun", "PacBioErrfun"),
+                          selected = "loessErrfun")
+            ),
+            div(style = "margin-top: 8px;",
+              tags$label("Priors (one sequence per line)", `for` = "dada_priors",
+                         class = "dada-param-label"),
+              textAreaInput("dada_priors", label = NULL, value = "", rows = 4,
+                            placeholder = "Paste ASV sequences here, one per line")
+            )
+          )
+        ),
+
         actionButton("btn_denoise", "Learn Errors & Dereplicate", class = "btn-primary",
                      icon = icon("microchip")),
         uiOutput("progress_step4")
@@ -2528,6 +2570,37 @@ server <- function(input, output, session) {
     rv$denoise_stage <- 1  # 1=errF, 2=errR, 3=dadaF, 4=dadaR
     rv$bg_denoise_start <- Sys.time()
 
+    # Parse and store dada() parameters from UI
+    omega_a_raw <- trimws(input$dada_omega_a)
+    omega_a_val <- tryCatch(as.numeric(omega_a_raw), warning = function(w) NA_real_)
+    if (is.na(omega_a_val) || omega_a_val <= 0) {
+      add_log(4, paste0("Invalid OMEGA_A value '", omega_a_raw, "' — using default 1e-40."), "warn")
+      omega_a_val <- 1e-40
+    }
+    pool_raw <- input$dada_pool
+    pool_val <- if (pool_raw == "TRUE") TRUE else if (pool_raw == "FALSE") FALSE else "pseudo"
+
+    priors_raw <- trimws(input$dada_priors)
+    priors_val <- if (nchar(priors_raw) == 0) character(0) else
+                  trimws(strsplit(priors_raw, "\n")[[1]])
+    priors_val <- priors_val[nchar(priors_val) > 0]
+
+    err_fn_name <- input$dada_err_fn
+    err_fn_val  <- get(err_fn_name, envir = asNamespace("dada2"))
+
+    rv$dada_params <- list(
+      OMEGA_A                 = omega_a_val,
+      pool                    = pool_val,
+      priors                  = priors_val,
+      errorEstimationFunction = err_fn_val
+    )
+
+    add_log(4, paste0("dada() params: OMEGA_A=", omega_a_val,
+                      ", pool=", pool_raw,
+                      ", errorEstimationFunction=", err_fn_name,
+                      ", priors=", if (length(priors_val) == 0) "none" else
+                                   paste(length(priors_val), "sequence(s)")), "info")
+
     # Stage 1: learn forward errors
     rv$bg_denoise <- callr::r_bg(
       function(filtFs, mt) { library(dada2); learnErrors(filtFs, multithread = mt) },
@@ -2568,8 +2641,12 @@ server <- function(input, output, session) {
           rv$denoise_stage <- 3
           rv$bg_denoise_start <- Sys.time()
           rv$bg_denoise <- callr::r_bg(
-            function(filtFs, errF, mt) { library(dada2); dada(filtFs, err = errF, multithread = mt) },
-            args = list(filtFs = rv$filtFs, errF = rv$errF, mt = can_multithread), supervise = TRUE
+            function(filtFs, errF, mt, params) {
+              library(dada2)
+              do.call(dada, c(list(derep = filtFs, err = errF, multithread = mt), params))
+            },
+            args = list(filtFs = rv$filtFs, errF = rv$errF, mt = can_multithread,
+                        params = rv$dada_params), supervise = TRUE
           )
         } else if (stage == 3) {
           rv$dadaFs <- result
@@ -2577,8 +2654,12 @@ server <- function(input, output, session) {
           rv$denoise_stage <- 4
           rv$bg_denoise_start <- Sys.time()
           rv$bg_denoise <- callr::r_bg(
-            function(filtRs, errR, mt) { library(dada2); dada(filtRs, err = errR, multithread = mt) },
-            args = list(filtRs = rv$filtRs, errR = rv$errR, mt = can_multithread), supervise = TRUE
+            function(filtRs, errR, mt, params) {
+              library(dada2)
+              do.call(dada, c(list(derep = filtRs, err = errR, multithread = mt), params))
+            },
+            args = list(filtRs = rv$filtRs, errR = rv$errR, mt = can_multithread,
+                        params = rv$dada_params), supervise = TRUE
           )
         } else if (stage == 4) {
           rv$dadaRs <- result
