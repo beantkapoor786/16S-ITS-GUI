@@ -315,6 +315,10 @@ body {
   letter-spacing: 0.05em !important;
   margin-bottom: 6px !important;
 }
+label.dada-param-label {
+  color: #ffffff !important;
+  font-weight: bold !important;
+}
 
 .checkbox label, .radio label {
   text-transform: none !important;
@@ -822,9 +826,10 @@ ui <- fluidPage(
       // Instant running indicator: inject DOM element immediately on click,
       // before Shiny's reactive flush. This ensures the user sees feedback instantly
       // even if the observeEvent handler has synchronous blocking work.
-      $(document).on('click', '#btn_run_cutadapt, #btn_filter, #btn_denoise, #btn_merge, #btn_taxonomy', function() {
+      $(document).on('click', '#btn_check_primers, #btn_run_cutadapt, #btn_filter, #btn_denoise, #btn_merge, #btn_taxonomy', function() {
         var btnId = $(this).attr('id');
         var targetMap = {
+          'btn_check_primers': 'progress_step3_check',
           'btn_run_cutadapt': 'progress_step3',
           'btn_filter': 'progress_step4',
           'btn_ancombc2': 'progress_step11',
@@ -968,6 +973,22 @@ ui <- fluidPage(
         div(class = "card-description",
           "Enter the forward (FWD) and reverse (REV) primer sequences used for ITS amplification. You can add multiple primers if your library used mixed primers. The number of forward and reverse primers can differ."
         ),
+        div(class = "card-description",
+          style = "background: #fffbeb; border-left: 3px solid #f59e0b; padding: 10px 12px; border-radius: 4px; margin-bottom: 8px; color: #92400e;",
+          tags$strong("⚠️  Note: "),
+          "Enter primer sequences only. Do not include adapter or Illumina index sequences. If you paste a combined adapter+primer sequence, cutadapt will fail to find matches in your reads and no primers will be trimmed."
+        ),
+        div(class = "card-description",
+          style = "background: var(--surface-2); border-left: 3px solid var(--accent); padding: 10px 12px; border-radius: 4px; margin-bottom: 8px;",
+          tags$strong("Test dataset: "),
+          tags$span("EBI ENA accession "),
+          tags$a("PRJNA377530", href = "https://www.ebi.ac.uk/ena/browser/view/PRJNA377530", target = "_blank"),
+          tags$span(" (ITS amplicons). Primers — Forward (BITS3): "),
+          tags$code("ACCTGCGGARGGATCA"),
+          tags$span("; Reverse (B58S3): "),
+          tags$code("GAGATCCRTTGYTRAAAGTT"),
+          tags$span(".")
+        ),
         div(class = "card-description", style = "font-weight: 500; color: var(--text-primary); margin-bottom: 8px;", "Forward Primers"),
         uiOutput("fwd_primer_inputs"),
         actionButton("btn_add_fwd_primer", "+ Add Forward Primer", class = "btn-secondary",
@@ -979,7 +1000,8 @@ ui <- fluidPage(
         div(style = "margin-top: 12px;",
           actionButton("btn_check_primers", "Check Primer Orientations", class = "btn-primary",
                        icon = icon("search"))
-        )
+        ),
+        uiOutput("progress_step3_check")
       ),
 
       div(class = "card",
@@ -1153,6 +1175,44 @@ ui <- fluidPage(
         div(class = "card-description",
           "DADA2 learns error rates from the data and then applies the core sample inference algorithm to dereplicate and denoise sequences."
         ),
+
+        div(class = "grid-2",
+          div(
+            tags$label("OMEGA_A", `for` = "dada_omega_a", class = "dada-param-label"),
+            tags$small(style = "display:block; color:#8899b0; margin-bottom:4px;",
+              "Significance threshold for calling new ASVs. Lower values are more stringent and produce fewer, higher-confidence ASVs."),
+            textInput("dada_omega_a", label = NULL, value = "1e-40",
+                      placeholder = "e.g. 1e-40")
+          ),
+          div(
+            tags$label("Pooling", `for` = "dada_pool", class = "dada-param-label"),
+            tags$small(style = "display:block; color:#8899b0; margin-bottom:4px;",
+              "FALSE (default) processes samples independently and is fastest. TRUE pools all samples to improve sensitivity for rare variants. pseudo balances speed and sensitivity."),
+            selectInput("dada_pool", label = NULL, choices = c("FALSE", "TRUE", "pseudo"),
+                        selected = "FALSE")
+          )
+        ),
+
+        tags$details(
+          tags$summary(style = "cursor:pointer; color:#8899b0; margin-bottom:10px;",
+                       "Advanced denoising options"),
+          div(style = "padding: 8px 0;",
+            div(
+              tags$label("errorEstimationFunction", `for` = "dada_err_fn",
+                         class = "dada-param-label"),
+              selectInput("dada_err_fn", label = NULL,
+                          choices = c("loessErrfun", "noqualErrfun", "PacBioErrfun"),
+                          selected = "loessErrfun")
+            ),
+            div(style = "margin-top: 8px;",
+              tags$label("Priors (one sequence per line)", `for` = "dada_priors",
+                         class = "dada-param-label"),
+              textAreaInput("dada_priors", label = NULL, value = "", rows = 4,
+                            placeholder = "Paste ASV sequences here, one per line")
+            )
+          )
+        ),
+
         actionButton("btn_denoise", "Learn Errors & Dereplicate", class = "btn-primary",
                      icon = icon("microchip")),
         uiOutput("progress_step5")
@@ -1726,6 +1786,7 @@ server <- function(input, output, session) {
     # Logs
     log1 = "", log3 = "", log4 = "", log5 = "", log6 = "", log7 = "", log8 = "", log9 = "",
     # Step progress: list(pct, label, status)
+    prog3_check = list(pct = 0, label = "", status = "idle"),
     prog3 = list(pct = 0, label = "", status = "idle"),
     prog4 = list(pct = 0, label = "", status = "idle"),
     prog5 = list(pct = 0, label = "", status = "idle"),
@@ -1768,6 +1829,7 @@ server <- function(input, output, session) {
     )
   }
 
+  output$progress_step3_check <- renderUI({ render_progress_bar(rv$prog3_check) })
   output$progress_step3 <- renderUI({ render_progress_bar(rv$prog3) })
   output$progress_step4 <- renderUI({ render_progress_bar(rv$prog4) })
   output$progress_step5 <- renderUI({ render_progress_bar(rv$prog5) })
@@ -2417,7 +2479,7 @@ server <- function(input, output, session) {
     }
 
     add_log(3, "Pre-filtering reads to remove Ns...")
-    set_progress(3, 0, "Pre-filtering Ns and checking primers...", "running")
+    set_progress("3_check", 0, "Pre-filtering Ns and checking primers...", "running")
     path <- trimws(input$data_path)
 
     # Pre-filter Ns (automatic)
@@ -2447,11 +2509,11 @@ server <- function(input, output, session) {
       }
       hits <- do.call(rbind, all_hits)
       rv$primer_hits_before <- hits
-      set_progress(3, 0, "", "idle")
+      set_progress("3_check", 100, "Primer orientation check complete", "done")
       add_log(3, "Primer orientation check complete. Review the table below.", "success")
     }, error = function(e) {
       add_log(3, paste("Error:", e$message), "error")
-      set_progress(3, 0, paste("Error:", e$message), "error")
+      set_progress("3_check", 0, paste("Error:", e$message), "error")
     })
   })
 
@@ -2465,7 +2527,11 @@ server <- function(input, output, session) {
 
   # Run cutadapt
   observeEvent(input$btn_run_cutadapt, {
-    req(rv$fnFs_filtN, rv$fnRs_filtN)
+    if (is.null(rv$fnFs_filtN) || length(rv$fnFs_filtN) == 0) {
+      add_log(3, "Please run 'Check Primer Orientations' before running cutadapt. This step pre-filters reads and is required before primer removal.", "error")
+      set_progress(3, 0, "Run 'Check Primer Orientations' first", "error")
+      return()
+    }
     FWD_list <- get_fwd_primers()
     REV_list <- get_rev_primers()
 
@@ -2840,6 +2906,37 @@ server <- function(input, output, session) {
     rv$denoise_stage <- 1  # 1=errF, 2=errR, 3=dadaF, 4=dadaR
     rv$bg_denoise_start <- Sys.time()
 
+    # Parse and store dada() parameters from UI
+    omega_a_raw <- trimws(input$dada_omega_a)
+    omega_a_val <- tryCatch(as.numeric(omega_a_raw), warning = function(w) NA_real_)
+    if (is.na(omega_a_val) || omega_a_val <= 0) {
+      add_log(5, paste0("Invalid OMEGA_A value '", omega_a_raw, "' — using default 1e-40."), "warn")
+      omega_a_val <- 1e-40
+    }
+    pool_raw <- input$dada_pool
+    pool_val <- if (pool_raw == "TRUE") TRUE else if (pool_raw == "FALSE") FALSE else "pseudo"
+
+    priors_raw <- trimws(input$dada_priors)
+    priors_val <- if (nchar(priors_raw) == 0) character(0) else
+                  trimws(strsplit(priors_raw, "\n")[[1]])
+    priors_val <- priors_val[nchar(priors_val) > 0]
+
+    err_fn_name <- input$dada_err_fn
+    err_fn_val  <- get(err_fn_name, envir = asNamespace("dada2"))
+
+    rv$dada_params <- list(
+      OMEGA_A                 = omega_a_val,
+      pool                    = pool_val,
+      priors                  = priors_val,
+      errorEstimationFunction = err_fn_val
+    )
+
+    add_log(5, paste0("dada() params: OMEGA_A=", omega_a_val,
+                      ", pool=", pool_raw,
+                      ", errorEstimationFunction=", err_fn_name,
+                      ", priors=", if (length(priors_val) == 0) "none" else
+                                   paste(length(priors_val), "sequence(s)")), "info")
+
     # Stage 1: learn forward errors
     rv$bg_denoise <- callr::r_bg(
       function(filtFs, mt) { library(dada2); learnErrors(filtFs, multithread = mt) },
@@ -2880,8 +2977,12 @@ server <- function(input, output, session) {
           rv$denoise_stage <- 3
           rv$bg_denoise_start <- Sys.time()
           rv$bg_denoise <- callr::r_bg(
-            function(filtFs, errF, mt) { library(dada2); dada(filtFs, err = errF, multithread = mt) },
-            args = list(filtFs = rv$filtFs, errF = rv$errF, mt = can_multithread), supervise = TRUE
+            function(filtFs, errF, mt, params) {
+              library(dada2)
+              do.call(dada, c(list(derep = filtFs, err = errF, multithread = mt), params))
+            },
+            args = list(filtFs = rv$filtFs, errF = rv$errF, mt = can_multithread,
+                        params = rv$dada_params), supervise = TRUE
           )
         } else if (stage == 3) {
           rv$dadaFs <- result
@@ -2889,8 +2990,12 @@ server <- function(input, output, session) {
           rv$denoise_stage <- 4
           rv$bg_denoise_start <- Sys.time()
           rv$bg_denoise <- callr::r_bg(
-            function(filtRs, errR, mt) { library(dada2); dada(filtRs, err = errR, multithread = mt) },
-            args = list(filtRs = rv$filtRs, errR = rv$errR, mt = can_multithread), supervise = TRUE
+            function(filtRs, errR, mt, params) {
+              library(dada2)
+              do.call(dada, c(list(derep = filtRs, err = errR, multithread = mt), params))
+            },
+            args = list(filtRs = rv$filtRs, errR = rv$errR, mt = can_multithread,
+                        params = rv$dada_params), supervise = TRUE
           )
         } else if (stage == 4) {
           rv$dadaRs <- result
