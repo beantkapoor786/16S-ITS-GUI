@@ -55,7 +55,7 @@ can_multithread <- .Platform$OS.type != "windows"
 
 # ── SILVA database URLs (v138.2) ──────────────────────────────────────────
 
-SILVA_GENUS_URL <- "https://www.arb-silva.de/fileadmin/silva_databases/current/DADA2/1.36.0/SSU/silva_nr99_v138.2_toGenus_trainset.fa.gz"
+SILVA_GENUS_URL <- "https://www.arb-silva.de/fileadmin/silva_databases/current/DADA2/1.36.0/LSU/silva_nr99_v138.2_toSpecies_trainset.fa.gz"
 SILVA_SPECIES_URL <- "https://www.arb-silva.de/fileadmin/silva_databases/current/DADA2/1.36.0/SSU/silva_v138.2_assignSpecies.fa.gz"
 
 # ── Common forward/reverse patterns ─────────────────────────────────────────
@@ -1251,7 +1251,8 @@ ui <- fluidPage(
           "Taxonomy Assignment"
         ),
         div(class = "card-description",
-          "Assign taxonomy using the SILVA reference database. The app will download the database if not already present."
+          "Assign taxonomy using the SILVA reference database. Paste a path to an existing ",
+          tags$code(".fa"), " or ", tags$code(".fa.gz"), " file, or a directory where the database will be downloaded if absent."
         ),
         div(class = "grid-2",
           div(
@@ -1262,9 +1263,9 @@ ui <- fluidPage(
             )
           ),
           div(
-            textInput("silva_dir", "Database Storage Directory",
-                      value = ""),
-            checkboxInput("add_species", "Add Species-Level Assignment", value = TRUE)
+            textInput("silva_db_path", "Database Path or Directory",
+                      value = "",
+                      placeholder = "/path/to/silva_nr99_v138.2_toSpecies_trainset.fa.gz")
           )
         ),
         actionButton("btn_taxonomy", "Assign Taxonomy", class = "btn-primary",
@@ -2951,42 +2952,39 @@ server <- function(input, output, session) {
     shinyjs::disable("btn_taxonomy")
 
     tryCatch({
-      db_dir <- input$silva_dir
-      if (!dir.exists(db_dir)) dir.create(db_dir, recursive = TRUE)
+      db_input <- trimws(input$silva_db_path)
 
-      genus_file <- file.path(db_dir, basename(SILVA_GENUS_URL))
-      species_file <- file.path(db_dir, basename(SILVA_SPECIES_URL))
+      # If user supplied a direct path to a .fa or .fa.gz file, use it as the genus file.
+      # Otherwise treat the input as a directory and download if needed.
+      is_fa_file <- grepl("\\.fa(\\.gz)?$", db_input, ignore.case = TRUE) && file.exists(db_input)
 
-      # Download if missing or corrupt (< 1 MB is a sign of a failed/partial download)
-      genus_ok <- file.exists(genus_file) &&
-                  isTRUE(!is.na(file.info(genus_file)$size) && file.info(genus_file)$size >= 1e6)
-      if (!genus_ok) {
-        if (file.exists(genus_file)) {
-          add_log(6, "SILVA genus file appears corrupt - re-downloading.", "warn")
-          file.remove(genus_file)
-        }
-        set_progress(6, 5, "Downloading SILVA genus database...", "running")
-        add_log(6, "Downloading SILVA genus training set...")
-        safe_download(SILVA_GENUS_URL, genus_file)
-        add_log(6, "SILVA genus database downloaded.", "success")
+      if (is_fa_file) {
+        genus_file  <- db_input
+        # For species assignment, still look in the same directory or download alongside
+        db_dir      <- dirname(db_input)
+        species_file <- file.path(db_dir, basename(SILVA_SPECIES_URL))
+        add_log(6, paste("Using local genus database:", genus_file), "info")
       } else {
-        add_log(6, "SILVA genus database found locally.", "info")
-      }
+        db_dir <- db_input
+        if (nchar(db_dir) == 0) stop("Please enter a database path or directory before running taxonomy assignment.")
+        if (!dir.exists(db_dir)) dir.create(db_dir, recursive = TRUE)
+        genus_file   <- file.path(db_dir, basename(SILVA_GENUS_URL))
+        species_file <- file.path(db_dir, basename(SILVA_SPECIES_URL))
 
-      if (input$add_species) {
-        species_ok <- file.exists(species_file) &&
-                      isTRUE(!is.na(file.info(species_file)$size) && file.info(species_file)$size >= 1e6)
-        if (!species_ok) {
-          if (file.exists(species_file)) {
-            add_log(6, "SILVA species file appears corrupt - re-downloading.", "warn")
-            file.remove(species_file)
+        # Download if missing or corrupt (< 1 MB is a sign of a failed/partial download)
+        genus_ok <- file.exists(genus_file) &&
+                    isTRUE(!is.na(file.info(genus_file)$size) && file.info(genus_file)$size >= 1e6)
+        if (!genus_ok) {
+          if (file.exists(genus_file)) {
+            add_log(6, "SILVA genus file appears corrupt - re-downloading.", "warn")
+            file.remove(genus_file)
           }
-          set_progress(6, 10, "Downloading SILVA species database...", "running")
-          add_log(6, "Downloading SILVA species assignment set...")
-          safe_download(SILVA_SPECIES_URL, species_file)
-          add_log(6, "SILVA species database downloaded.", "success")
+          set_progress(6, 5, "Downloading SILVA genus database...", "running")
+          add_log(6, "Downloading SILVA genus training set...")
+          safe_download(SILVA_GENUS_URL, genus_file)
+          add_log(6, "SILVA genus database downloaded.", "success")
         } else {
-          add_log(6, "SILVA species database found locally.", "info")
+          add_log(6, "SILVA genus database found locally.", "info")
         }
       }
 
@@ -2996,24 +2994,17 @@ server <- function(input, output, session) {
       # Determine which function to run in background
       if (input$tax_method == "bayesian") {
         rv$bg_tax <- callr::r_bg(
-          function(seqtab, genus_file, species_file, add_species, mt) {
+          function(seqtab, genus_file, mt) {
             library(dada2)
             if (!file.exists(genus_file))
-              stop(paste("Genus database not found:", genus_file))
+              stop(paste("Database not found:", genus_file))
             seqs <- dada2::getSequences(seqtab)
             if (length(seqs) == 0)
               stop("Sequence table contains no ASVs - cannot assign taxonomy.")
-            tx <- assignTaxonomy(seqtab, genus_file, multithread = mt)
-            if (add_species && nrow(tx) > 0) {
-              if (!file.exists(species_file))
-                stop(paste("Species database not found:", species_file))
-              tx <- addSpecies(tx, species_file)
-            }
-            tx
+            assignTaxonomy(seqtab, genus_file, multithread = mt)
           },
           args = list(
             seqtab = rv$seqtab_nochim, genus_file = genus_file,
-            species_file = species_file, add_species = input$add_species,
             mt = can_multithread
           ),
           supervise = TRUE
