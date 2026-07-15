@@ -2971,9 +2971,9 @@ server <- function(input, output, session) {
         genus_file   <- file.path(db_dir, basename(SILVA_GENUS_URL))
         species_file <- file.path(db_dir, basename(SILVA_SPECIES_URL))
 
-        # Download if missing or corrupt (< 1 MB is a sign of a failed/partial download)
+        # Download if missing or corrupt (< 50 MB likely means a partial/failed download)
         genus_ok <- file.exists(genus_file) &&
-                    isTRUE(!is.na(file.info(genus_file)$size) && file.info(genus_file)$size >= 1e6)
+                    isTRUE(!is.na(file.info(genus_file)$size) && file.info(genus_file)$size >= 50e6)
         if (!genus_ok) {
           if (file.exists(genus_file)) {
             add_log(6, "SILVA genus file appears corrupt - re-downloading.", "warn")
@@ -3082,10 +3082,14 @@ server <- function(input, output, session) {
         add_log(6, paste("Taxonomy assigned to", nrow(taxa), "ASVs."), "success")
         set_progress(6, 100, "Taxonomy assignment complete", "done")
         rv$completed_steps <- union(rv$completed_steps, 6)
-      auto_save_session()
+        auto_save_session()
       }, error = function(e) {
-        add_log(6, paste("Error:", e$message), "error")
-        set_progress(6, 0, paste("Error:", e$message), "error")
+        stderr_out <- tryCatch(paste(rv$bg_tax$read_error(), collapse = "\n"), error = function(e2) "")
+        msg <- e$message
+        if (nchar(trimws(stderr_out)) > 0)
+          msg <- paste0(msg, " | subprocess stderr: ", stderr_out)
+        add_log(6, paste("Error:", msg), "error")
+        set_progress(6, 0, "Taxonomy assignment failed — see log for details", "error")
       })
       shinyjs::enable("btn_taxonomy")
       rv$bg_tax <- NULL
