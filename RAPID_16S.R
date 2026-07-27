@@ -55,7 +55,7 @@ can_multithread <- .Platform$OS.type != "windows"
 
 # ── SILVA database URLs (v138.2) ──────────────────────────────────────────
 
-SILVA_GENUS_URL <- "https://www.arb-silva.de/fileadmin/silva_databases/current/DADA2/1.36.0/SSU/silva_nr99_v138.2_toGenus_trainset.fa.gz"
+SILVA_GENUS_URL <- "https://www.arb-silva.de/fileadmin/silva_databases/current/DADA2/1.36.0/LSU/silva_nr99_v138.2_toSpecies_trainset.fa.gz"
 SILVA_SPECIES_URL <- "https://www.arb-silva.de/fileadmin/silva_databases/current/DADA2/1.36.0/SSU/silva_v138.2_assignSpecies.fa.gz"
 
 # ── Common forward/reverse patterns ─────────────────────────────────────────
@@ -323,6 +323,10 @@ body {
   text-transform: uppercase !important;
   letter-spacing: 0.05em !important;
   margin-bottom: 6px !important;
+}
+label.dada-param-label {
+  color: #ffffff !important;
+  font-weight: bold !important;
 }
 
 .checkbox label, .radio label {
@@ -1108,6 +1112,44 @@ ui <- fluidPage(
         div(class = "card-description",
           "DADA2 learns error rates from the data and then applies the core sample inference algorithm to dereplicate and denoise sequences."
         ),
+
+        div(class = "grid-2",
+          div(
+            tags$label("OMEGA_A", `for` = "dada_omega_a", class = "dada-param-label"),
+            tags$small(style = "display:block; color:#8899b0; margin-bottom:4px;",
+              "Significance threshold for calling new ASVs. Lower values are more stringent and produce fewer, higher-confidence ASVs."),
+            textInput("dada_omega_a", label = NULL, value = "1e-40",
+                      placeholder = "e.g. 1e-40")
+          ),
+          div(
+            tags$label("Pooling", `for` = "dada_pool", class = "dada-param-label"),
+            tags$small(style = "display:block; color:#8899b0; margin-bottom:4px;",
+              "FALSE (default) processes samples independently and is fastest. TRUE pools all samples to improve sensitivity for rare variants. pseudo balances speed and sensitivity."),
+            selectInput("dada_pool", label = NULL, choices = c("FALSE", "TRUE", "pseudo"),
+                        selected = "FALSE")
+          )
+        ),
+
+        tags$details(
+          tags$summary(style = "cursor:pointer; color:#8899b0; margin-bottom:10px;",
+                       "Advanced denoising options"),
+          div(style = "padding: 8px 0;",
+            div(
+              tags$label("errorEstimationFunction", `for` = "dada_err_fn",
+                         class = "dada-param-label"),
+              selectInput("dada_err_fn", label = NULL,
+                          choices = c("loessErrfun", "noqualErrfun", "PacBioErrfun"),
+                          selected = "loessErrfun")
+            ),
+            div(style = "margin-top: 8px;",
+              tags$label("Priors (one sequence per line)", `for` = "dada_priors",
+                         class = "dada-param-label"),
+              textAreaInput("dada_priors", label = NULL, value = "", rows = 4,
+                            placeholder = "Paste ASV sequences here, one per line")
+            )
+          )
+        ),
+
         actionButton("btn_denoise", "Learn Errors & Dereplicate", class = "btn-primary",
                      icon = icon("microchip")),
         uiOutput("progress_step4")
@@ -1209,7 +1251,8 @@ ui <- fluidPage(
           "Taxonomy Assignment"
         ),
         div(class = "card-description",
-          "Assign taxonomy using the SILVA reference database. The app will download the database if not already present."
+          "Assign taxonomy using the SILVA reference database. Paste a path to an existing ",
+          tags$code(".fa"), " or ", tags$code(".fa.gz"), " file, or a directory where the database will be downloaded if absent."
         ),
         div(class = "grid-2",
           div(
@@ -1220,9 +1263,9 @@ ui <- fluidPage(
             )
           ),
           div(
-            textInput("silva_dir", "Database Storage Directory",
-                      value = ""),
-            checkboxInput("add_species", "Add Species-Level Assignment", value = TRUE)
+            textInput("silva_db_path", "Database Path or Directory",
+                      value = "",
+                      placeholder = "/path/to/silva_nr99_v138.2_toSpecies_trainset.fa.gz")
           )
         ),
         actionButton("btn_taxonomy", "Assign Taxonomy", class = "btn-primary",
@@ -2528,6 +2571,37 @@ server <- function(input, output, session) {
     rv$denoise_stage <- 1  # 1=errF, 2=errR, 3=dadaF, 4=dadaR
     rv$bg_denoise_start <- Sys.time()
 
+    # Parse and store dada() parameters from UI
+    omega_a_raw <- trimws(input$dada_omega_a)
+    omega_a_val <- tryCatch(as.numeric(omega_a_raw), warning = function(w) NA_real_)
+    if (is.na(omega_a_val) || omega_a_val <= 0) {
+      add_log(4, paste0("Invalid OMEGA_A value '", omega_a_raw, "' — using default 1e-40."), "warn")
+      omega_a_val <- 1e-40
+    }
+    pool_raw <- input$dada_pool
+    pool_val <- if (pool_raw == "TRUE") TRUE else if (pool_raw == "FALSE") FALSE else "pseudo"
+
+    priors_raw <- trimws(input$dada_priors)
+    priors_val <- if (nchar(priors_raw) == 0) character(0) else
+                  trimws(strsplit(priors_raw, "\n")[[1]])
+    priors_val <- priors_val[nchar(priors_val) > 0]
+
+    err_fn_name <- input$dada_err_fn
+    err_fn_val  <- get(err_fn_name, envir = asNamespace("dada2"))
+
+    rv$dada_params <- list(
+      OMEGA_A                 = omega_a_val,
+      pool                    = pool_val,
+      priors                  = priors_val,
+      errorEstimationFunction = err_fn_val
+    )
+
+    add_log(4, paste0("dada() params: OMEGA_A=", omega_a_val,
+                      ", pool=", pool_raw,
+                      ", errorEstimationFunction=", err_fn_name,
+                      ", priors=", if (length(priors_val) == 0) "none" else
+                                   paste(length(priors_val), "sequence(s)")), "info")
+
     # Stage 1: learn forward errors
     rv$bg_denoise <- callr::r_bg(
       function(filtFs, mt) { library(dada2); learnErrors(filtFs, multithread = mt) },
@@ -2568,8 +2642,12 @@ server <- function(input, output, session) {
           rv$denoise_stage <- 3
           rv$bg_denoise_start <- Sys.time()
           rv$bg_denoise <- callr::r_bg(
-            function(filtFs, errF, mt) { library(dada2); dada(filtFs, err = errF, multithread = mt) },
-            args = list(filtFs = rv$filtFs, errF = rv$errF, mt = can_multithread), supervise = TRUE
+            function(filtFs, errF, mt, params) {
+              library(dada2)
+              do.call(dada, c(list(derep = filtFs, err = errF, multithread = mt), params))
+            },
+            args = list(filtFs = rv$filtFs, errF = rv$errF, mt = can_multithread,
+                        params = rv$dada_params), supervise = TRUE
           )
         } else if (stage == 3) {
           rv$dadaFs <- result
@@ -2577,8 +2655,12 @@ server <- function(input, output, session) {
           rv$denoise_stage <- 4
           rv$bg_denoise_start <- Sys.time()
           rv$bg_denoise <- callr::r_bg(
-            function(filtRs, errR, mt) { library(dada2); dada(filtRs, err = errR, multithread = mt) },
-            args = list(filtRs = rv$filtRs, errR = rv$errR, mt = can_multithread), supervise = TRUE
+            function(filtRs, errR, mt, params) {
+              library(dada2)
+              do.call(dada, c(list(derep = filtRs, err = errR, multithread = mt), params))
+            },
+            args = list(filtRs = rv$filtRs, errR = rv$errR, mt = can_multithread,
+                        params = rv$dada_params), supervise = TRUE
           )
         } else if (stage == 4) {
           rv$dadaRs <- result
@@ -2870,42 +2952,39 @@ server <- function(input, output, session) {
     shinyjs::disable("btn_taxonomy")
 
     tryCatch({
-      db_dir <- input$silva_dir
-      if (!dir.exists(db_dir)) dir.create(db_dir, recursive = TRUE)
+      db_input <- trimws(input$silva_db_path)
 
-      genus_file <- file.path(db_dir, basename(SILVA_GENUS_URL))
-      species_file <- file.path(db_dir, basename(SILVA_SPECIES_URL))
+      # If user supplied a direct path to a .fa or .fa.gz file, use it as the genus file.
+      # Otherwise treat the input as a directory and download if needed.
+      is_fa_file <- grepl("\\.fa(\\.gz)?$", db_input, ignore.case = TRUE) && file.exists(db_input)
 
-      # Download if missing or corrupt (< 1 MB is a sign of a failed/partial download)
-      genus_ok <- file.exists(genus_file) &&
-                  isTRUE(!is.na(file.info(genus_file)$size) && file.info(genus_file)$size >= 1e6)
-      if (!genus_ok) {
-        if (file.exists(genus_file)) {
-          add_log(6, "SILVA genus file appears corrupt - re-downloading.", "warn")
-          file.remove(genus_file)
-        }
-        set_progress(6, 5, "Downloading SILVA genus database...", "running")
-        add_log(6, "Downloading SILVA genus training set...")
-        safe_download(SILVA_GENUS_URL, genus_file)
-        add_log(6, "SILVA genus database downloaded.", "success")
+      if (is_fa_file) {
+        genus_file  <- db_input
+        # For species assignment, still look in the same directory or download alongside
+        db_dir      <- dirname(db_input)
+        species_file <- file.path(db_dir, basename(SILVA_SPECIES_URL))
+        add_log(6, paste("Using local genus database:", genus_file), "info")
       } else {
-        add_log(6, "SILVA genus database found locally.", "info")
-      }
+        db_dir <- db_input
+        if (nchar(db_dir) == 0) stop("Please enter a database path or directory before running taxonomy assignment.")
+        if (!dir.exists(db_dir)) dir.create(db_dir, recursive = TRUE)
+        genus_file   <- file.path(db_dir, basename(SILVA_GENUS_URL))
+        species_file <- file.path(db_dir, basename(SILVA_SPECIES_URL))
 
-      if (input$add_species) {
-        species_ok <- file.exists(species_file) &&
-                      isTRUE(!is.na(file.info(species_file)$size) && file.info(species_file)$size >= 1e6)
-        if (!species_ok) {
-          if (file.exists(species_file)) {
-            add_log(6, "SILVA species file appears corrupt - re-downloading.", "warn")
-            file.remove(species_file)
+        # Download if missing or corrupt (< 50 MB likely means a partial/failed download)
+        genus_ok <- file.exists(genus_file) &&
+                    isTRUE(!is.na(file.info(genus_file)$size) && file.info(genus_file)$size >= 50e6)
+        if (!genus_ok) {
+          if (file.exists(genus_file)) {
+            add_log(6, "SILVA genus file appears corrupt - re-downloading.", "warn")
+            file.remove(genus_file)
           }
-          set_progress(6, 10, "Downloading SILVA species database...", "running")
-          add_log(6, "Downloading SILVA species assignment set...")
-          safe_download(SILVA_SPECIES_URL, species_file)
-          add_log(6, "SILVA species database downloaded.", "success")
+          set_progress(6, 5, "Downloading SILVA genus database...", "running")
+          add_log(6, "Downloading SILVA genus training set...")
+          safe_download(SILVA_GENUS_URL, genus_file)
+          add_log(6, "SILVA genus database downloaded.", "success")
         } else {
-          add_log(6, "SILVA species database found locally.", "info")
+          add_log(6, "SILVA genus database found locally.", "info")
         }
       }
 
@@ -2915,24 +2994,17 @@ server <- function(input, output, session) {
       # Determine which function to run in background
       if (input$tax_method == "bayesian") {
         rv$bg_tax <- callr::r_bg(
-          function(seqtab, genus_file, species_file, add_species, mt) {
+          function(seqtab, genus_file, mt) {
             library(dada2)
             if (!file.exists(genus_file))
-              stop(paste("Genus database not found:", genus_file))
+              stop(paste("Database not found:", genus_file))
             seqs <- dada2::getSequences(seqtab)
             if (length(seqs) == 0)
               stop("Sequence table contains no ASVs - cannot assign taxonomy.")
-            tx <- assignTaxonomy(seqtab, genus_file, multithread = mt)
-            if (add_species && nrow(tx) > 0) {
-              if (!file.exists(species_file))
-                stop(paste("Species database not found:", species_file))
-              tx <- addSpecies(tx, species_file)
-            }
-            tx
+            assignTaxonomy(seqtab, genus_file, multithread = mt)
           },
           args = list(
             seqtab = rv$seqtab_nochim, genus_file = genus_file,
-            species_file = species_file, add_species = input$add_species,
             mt = can_multithread
           ),
           supervise = TRUE
@@ -3010,10 +3082,14 @@ server <- function(input, output, session) {
         add_log(6, paste("Taxonomy assigned to", nrow(taxa), "ASVs."), "success")
         set_progress(6, 100, "Taxonomy assignment complete", "done")
         rv$completed_steps <- union(rv$completed_steps, 6)
-      auto_save_session()
+        auto_save_session()
       }, error = function(e) {
-        add_log(6, paste("Error:", e$message), "error")
-        set_progress(6, 0, paste("Error:", e$message), "error")
+        stderr_out <- tryCatch(paste(rv$bg_tax$read_error(), collapse = "\n"), error = function(e2) "")
+        msg <- e$message
+        if (nchar(trimws(stderr_out)) > 0)
+          msg <- paste0(msg, " | subprocess stderr: ", stderr_out)
+        add_log(6, paste("Error:", msg), "error")
+        set_progress(6, 0, "Taxonomy assignment failed — see log for details", "error")
       })
       shinyjs::enable("btn_taxonomy")
       rv$bg_tax <- NULL
