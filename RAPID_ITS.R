@@ -1331,6 +1331,7 @@ ui <- fluidPage(
               "Path to UNITE .fasta file, or a directory (will auto-download if not found)")
           )
         ),
+        numericInput("tax_seed", "Random seed (for reproducible taxonomy)", value = 100, min = 1, step = 1),
         actionButton("btn_taxonomy", "Assign Taxonomy", class = "btn-primary",
                      icon = icon("tags")),
         uiOutput("progress_step7")
@@ -3346,14 +3347,16 @@ server <- function(input, output, session) {
 
       if (input$tax_method == "bayesian") {
         rv$bg_tax <- callr::r_bg(
-          function(seqtab, ref_db, mt) {
+          function(seqtab, ref_db, mt, seed) {
             library(dada2)
+            set.seed(seed)
             assignTaxonomy(seqtab, ref_db, multithread = mt)
           },
           args = list(
             seqtab = rv$seqtab_nochim,
             ref_db = unite_file,
-            mt = can_multithread
+            mt = can_multithread,
+            seed = input$tax_seed
           ),
           supervise = TRUE
         )
@@ -3384,14 +3387,16 @@ server <- function(input, output, session) {
         } else {
           add_log(7, "DECIPHER training set not found. Falling back to assignTaxonomy.", "warn")
           rv$bg_tax <- callr::r_bg(
-            function(seqtab, ref_db, mt) {
+            function(seqtab, ref_db, mt, seed) {
               library(dada2)
+              set.seed(seed)
               assignTaxonomy(seqtab, ref_db, multithread = mt)
             },
             args = list(
               seqtab = rv$seqtab_nochim,
               ref_db = unite_file,
-              mt = can_multithread
+              mt = can_multithread,
+              seed = input$tax_seed
             ),
             supervise = TRUE
           )

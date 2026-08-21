@@ -1268,6 +1268,7 @@ ui <- fluidPage(
                       placeholder = "/path/to/silva_nr99_v138.2_toSpecies_trainset.fa.gz")
           )
         ),
+        numericInput("tax_seed", "Random seed (for reproducible taxonomy)", value = 100, min = 1, step = 1),
         actionButton("btn_taxonomy", "Assign Taxonomy", class = "btn-primary",
                      icon = icon("tags")),
         uiOutput("progress_step6")
@@ -2994,18 +2995,19 @@ server <- function(input, output, session) {
       # Determine which function to run in background
       if (input$tax_method == "bayesian") {
         rv$bg_tax <- callr::r_bg(
-          function(seqtab, genus_file, mt) {
+          function(seqtab, genus_file, mt, seed) {
             library(dada2)
             if (!file.exists(genus_file))
               stop(paste("Database not found:", genus_file))
             seqs <- dada2::getSequences(seqtab)
             if (length(seqs) == 0)
               stop("Sequence table contains no ASVs - cannot assign taxonomy.")
+            set.seed(seed)
             assignTaxonomy(seqtab, genus_file, multithread = mt)
           },
           args = list(
             seqtab = rv$seqtab_nochim, genus_file = genus_file,
-            mt = can_multithread
+            mt = can_multithread, seed = input$tax_seed
           ),
           supervise = TRUE
         )
@@ -3036,13 +3038,14 @@ server <- function(input, output, session) {
         } else {
           add_log(6, paste("DECIPHER training set not found. Falling back to assignTaxonomy."), "warn")
           rv$bg_tax <- callr::r_bg(
-            function(seqtab, genus_file, species_file, add_species, mt) {
+            function(seqtab, genus_file, species_file, add_species, mt, seed) {
               library(dada2)
               if (!file.exists(genus_file))
                 stop(paste("Genus database not found:", genus_file))
               seqs <- dada2::getSequences(seqtab)
               if (length(seqs) == 0)
                 stop("Sequence table contains no ASVs - cannot assign taxonomy.")
+              set.seed(seed)
               tx <- assignTaxonomy(seqtab, genus_file, multithread = mt)
               if (add_species && nrow(tx) > 0) {
                 if (!file.exists(species_file))
@@ -3054,7 +3057,7 @@ server <- function(input, output, session) {
             args = list(
               seqtab = rv$seqtab_nochim, genus_file = genus_file,
               species_file = species_file, add_species = input$add_species,
-              mt = can_multithread
+              mt = can_multithread, seed = input$tax_seed
             ),
             supervise = TRUE
           )
